@@ -10,7 +10,7 @@ All notable changes to BiDi Browser MCP Server will be documented in this file.
 - Tag-driven npm releases from `main` via Trusted Publishing (OIDC, tokenless)
   with GitHub Release bundles.
 - pnpm toolchain, TypeScript strict scaffold, and a stdio MCP entry point.
-- Dev-only `_archive/` with the BiDi build plan and protocol research.
+- Dev-only design notes and protocol research live on the `dev` branch.
 - MCP Registry metadata (`mcpName`, `server.json`) and version-alignment checks.
 - Dist-only npm packaging: `bin`/API split, postbuild executable mode, and
   `verify:package` / `verify:release` guards that keep repo docs and source out

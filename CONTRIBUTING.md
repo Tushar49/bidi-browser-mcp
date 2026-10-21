@@ -49,7 +49,8 @@ Key principles:
 
 The npm tarball is runtime-only. `files` allows `dist/` and npm always adds
 `README`, `LICENSE`, and `package.json`. Source, tests, scripts, configs,
-`AGENTS.md`, `CHANGELOG.md`, `server.json`, and `_archive/` must never ship.
+`AGENTS.md`, `CHANGELOG.md`, `server.json`, and any dev-only material must
+never ship.
 
 ```bash
 pnpm verify:package    # fails if npm pack contains anything outside dist + metadata
