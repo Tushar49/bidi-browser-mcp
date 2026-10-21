@@ -159,11 +159,12 @@ it is intentionally not shipped to npm.
   `git checkout main && git pull` →
   `git merge --no-ff --no-commit origin/dev` →
   sync `.gitignore` from `.main.gitignore` when it changed →
-  `git rm -r _archive .research .githooks .main.gitignore` →
+  `git rm -r -f _archive .research .githooks .main.gitignore` →
   verify `git status` shows no strays →
   commit `Merge dev → main: <version>`.
   `.gitignore` alone never blocks a merge (it only affects untracked files) —
-  deletion is explicit, policy second.
+  deletion is explicit, policy second. Dev-only files modified since the last
+  promote appear as modify/delete conflicts; `-f` resolves them as deletions.
 - **Reference duty:** files that ship to main (README, CONTRIBUTING,
   changelogs) must not reference dev-only paths (`_archive/`, `.research/`,
   agent scratch). Point at the concept ("full design ships on dev") instead of

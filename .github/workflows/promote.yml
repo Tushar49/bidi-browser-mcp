@@ -18,13 +18,19 @@ name: Promote dev to main
 # Manual equivalent (if you ever promote by hand):
 #   git checkout main && git pull
 #   git merge --no-ff --no-commit origin/dev
-#   if git diff --cached --quiet -- .main.gitignore; then :; else
-#     git show :.main.gitignore > .gitignore && git add .gitignore
+#   if git cat-file -e :.main.gitignore 2>/dev/null; then
+#     if ! git diff --cached --quiet -- .main.gitignore; then
+#       git show :.main.gitignore > .gitignore && git add .gitignore
+#     fi
 #   fi
-#   git rm -r -q _archive .research .githooks .main.gitignore \
+#   git rm -r -f -q _archive .research .githooks .main.gitignore \
 #     .github/AGENTS.md .github/copilot-instructions.md 2>/dev/null || true
 #   git diff --name-only --diff-filter=U   # must be empty; else resolve by hand
 #   git commit -m "Merge dev → main: <version>" && git push
+#
+# Dev-only paths modified since the last promote show up as modify/delete
+# conflicts (main deleted them, dev changed them). `git rm -f` resolves
+# those as deletions, which is the intended outcome.
 #
 # Main and dev need different .gitignore content, so dev carries a shadow
 # copy (.main.gitignore) holding the exact file main must have. At promote
@@ -61,7 +67,9 @@ jobs:
 
       - name: Sync .gitignore from dev shadow copy (when dev changed it)
         run: |
-          if git diff --cached --quiet -- .main.gitignore; then
+          if ! git cat-file -e :.main.gitignore 2>/dev/null; then
+            echo "No .main.gitignore in the merge index — keeping main's .gitignore."
+          elif git diff --cached --quiet -- .main.gitignore; then
             echo "No .main.gitignore change on dev — keeping main's .gitignore."
           else
             echo "Dev changed .main.gitignore — syncing to main's .gitignore."
@@ -71,7 +79,7 @@ jobs:
 
       - name: Strip dev-only material (explicit — .gitignore cannot do this)
         run: |
-          git rm -r -q _archive .research .githooks .main.gitignore \
+          git rm -r -f -q _archive .research .githooks .main.gitignore \
             .github/AGENTS.md .github/copilot-instructions.md 2>/dev/null || true
           echo "── remaining tracked dev-paths (must be empty) ──"
           git ls-files "_archive" ".research" ".githooks" ".main.gitignore" \
