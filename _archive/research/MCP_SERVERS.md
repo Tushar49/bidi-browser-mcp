@@ -5,7 +5,7 @@ A comprehensive catalog of MCP servers that provide browser automation capabilit
 ## 1. CDP Browser MCP Server (Tushar49)
 
 - **Repo**: [github.com/Tushar49/cdp-browser-mcp-server](https://github.com/Tushar49/cdp-browser-mcp-server)
-- **Local path**: ../CDP Browser Automation/MCP Server/
+- **Local path**: `../../cdp-browser-mcp/MCP Server/`
 - **Language**: TypeScript (38 modules)
 - **Version**: 5.0.0-alpha.3
 - **Status**: Active

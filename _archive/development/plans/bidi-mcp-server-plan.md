@@ -2,8 +2,8 @@
 
 **Name**: `bidi-browser-mcp`  
 **Repo root**: `./` (relative — no absolute paths)  
-**Reference project**: `../CDP%20Browser%20Automation/MCP%20Server/` (Tushar49 CDP MCP v5)  
-**Research**: `.research/` folder (8 files covering BiDi API, protocols, Foxbridge, MCP servers)
+**Reference project**: `../cdp-browser-mcp/MCP Server/` (Tushar49 CDP MCP v5)  
+**Research**: `_archive/research/` folder (8 files covering BiDi API, protocols, Foxbridge, MCP servers)
 
 ---
 

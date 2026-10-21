@@ -27,7 +27,7 @@ This directory contains comprehensive research on browser automation protocols, 
 - **Juggler**: Playwright's custom Firefox protocol. Pipe transport, null-byte JSON. Still works.
 
 ### Build Your Own
-- **MCP server for CDP**: Node.js 18+, ws + @modelcontextprotocol/sdk. 2 deps. Already done at ../CDP Browser Automation/.
+- **MCP server for CDP**: Node.js 18+, ws + @modelcontextprotocol/sdk. 2 deps. Already done at `../../cdp-browser-mcp/`.
 - **MCP server for BiDi**: Same deps. Different WebSocket endpoint (ws://localhost:9222/session). Different command set.
 - **Dual MCP server**: mcp-browser-dev-tools has reference architecture for CDP+BiDi in one broker.
 
@@ -51,7 +51,7 @@ CDP (Chromium native)                    Juggler (Playwright/Firefox)
 `
 
 ## External References
-- [CDP Browser MCP Server (your existing project)](../../CDP%20Browser%20Automation/) — already cloned and configured
+- [CDP Browser MCP Server (your existing project)](../../cdp-browser-mcp/) — already cloned and configured
 - [WebDriver BiDi W3C Spec](https://www.w3.org/TR/webdriver-bidi/) — latest version
 - [CDP Protocol Browser](https://chromedevtools.github.io/devtools-protocol/) — Chrome DevTools Protocol docs
 - [Playwright](https://playwright.dev/) — cross-browser automation framework
