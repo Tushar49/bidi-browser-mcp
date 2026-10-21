@@ -12,7 +12,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [20, 22]
+        node-version: [22, 24]
 
     steps:
       - uses: actions/checkout@v4
@@ -39,3 +39,9 @@ jobs:
 
       - name: Test
         run: pnpm run test
+
+      - name: Verify release metadata
+        run: pnpm run verify:release
+
+      - name: Verify published tarball is dist-only
+        run: pnpm run verify:package

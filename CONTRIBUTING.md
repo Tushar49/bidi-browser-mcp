@@ -7,9 +7,10 @@ pnpm install
 pnpm build
 pnpm typecheck
 pnpm test
+pnpm verify:package
 ```
 
-Requires Node.js 20+ and Firefox 129+ (BiDi is built in).
+Requires Node.js 20.19+ and Firefox 129+ (BiDi is built in).
 
 ## Development Workflow
 
@@ -39,10 +40,23 @@ Key principles:
 1. Create `src/tools/my-tool.ts`
 2. Use `defineTool()` from `./base-tool.js`
 3. Export `registerMyToolTools(registry, ctx)`
-4. Import and call in `src/index.ts`
+4. Register it in `createServer()` in `src/index.ts`
 5. Update README.md tool listing
 6. Update CHANGELOG.md
 7. Add unit tests under `src/__tests__/unit/`
+
+## Packaging
+
+The npm tarball is runtime-only. `files` allows `dist/` and npm always adds
+`README`, `LICENSE`, and `package.json`. Source, tests, scripts, configs,
+`AGENTS.md`, `CHANGELOG.md`, `server.json`, and `_archive/` must never ship.
+
+```bash
+pnpm verify:package    # fails if npm pack contains anything outside dist + metadata
+pnpm verify:release    # package.json == server.json; add a tag to check versions
+```
+
+Release versions are bumped in `package.json` and `server.json` together.
 
 ## Running Tests
 

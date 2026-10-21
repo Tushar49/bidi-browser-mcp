@@ -22,7 +22,8 @@ snapshot, and tool modules land per the wave plan.
 ├── AGENTS.md                  # this file — identical on main and dev
 ├── README.md / CHANGELOG.md / CONTRIBUTING.md / LICENSE
 ├── src/
-│   ├── index.ts               # entry (VERSION const here) → dist/index.js
+│   ├── bin.ts                 # CLI entry (shebang) → dist/bin.js
+│   ├── index.ts               # public API: createServer(), VERSION — no side effects
 │   ├── config.ts              # only env reader (BIDI_*)
 │   ├── types.ts               # shared contracts
 │   ├── connection/            # BiDi client, discovery, health, events   [planned]
@@ -31,6 +32,8 @@ snapshot, and tool modules land per the wave plan.
 │   ├── tools/                 # 15 tools / action-based dispatch         [planned]
 │   ├── utils/                 # wait, errors, response builder, temp     [planned]
 │   └── __tests__/             # unit + integration + benchmarks
+├── scripts/                   # postbuild chmod, release + tarball checks
+├── server.json                # MCP Registry metadata (never packed into npm)
 ├── .github/workflows/         # ci.yml, guard-main.yml, promote.yml, release.yml
 └── .github/ISSUE_TEMPLATE|PULL_REQUEST_TEMPLATE
 ```
@@ -67,12 +70,14 @@ holds protocol/browser research.
 
 ```bash
 pnpm install
-pnpm build              # tsc → dist/
+pnpm build              # tsc → dist/ + chmod bin on Unix
 pnpm typecheck          # tsc --noEmit (run before every commit — zero errors)
 pnpm lint               # alias of typecheck
 pnpm test               # unit (vitest)
 pnpm test:integration   # needs a real Firefox — local/dev only, not CI
 pnpm benchmark          # local/dev only
+pnpm verify:release     # package.json == server.json (and tag, when passed)
+pnpm verify:package     # npm tarball is dist-only — no src/docs/etc.
 ```
 
 Package manager: **pnpm** (canonical). npm works for script invocation, but the
@@ -80,7 +85,7 @@ lockfile and CI are pnpm.
 
 ## Local MCP verification (dev workflow)
 
-Point the MCP client at the **local build** (`dist/index.js` run via `node`),
+Point the MCP client at the **local build** (`dist/bin.js` run via `node`),
 not the published package. Run this checklist on EVERY dev session that touches
 server code:
 
@@ -100,8 +105,8 @@ Always:
 2. Conventional commits: `feat:` `fix:` `refactor:` `docs:` `chore:`.
 3. User-facing change → CHANGELOG.md entry.
 4. New/changed tool → README.md tool listing + agent-friendly description.
-5. Version bumps only via the release flow (package.json + `VERSION` in
-   `src/index.ts` together).
+5. Version bumps only via the release flow (package.json + server.json together;
+   `VERSION` in `src/index.ts` derives from package.json).
 6. Unit tests are hermetic (MockBiDiServer); integration tests opt in via
    `FIREFOX_BIDI_WS_URL`.
 
@@ -113,6 +118,23 @@ Never:
 5. Never close user tabs — cleanup default is detach.
 6. No heavy deps — `ws` + `@modelcontextprotocol/sdk` only.
 7. Integration/benchmark tests never run in CI (need a live browser).
+
+## Packaging rules
+
+The npm tarball is **runtime-only**. `package.json` uses an allowlist:
+`files: ["dist", "!dist/**/*.map"]`. npm always adds `package.json`, `README`,
+and `LICENSE`. Nothing else ships.
+
+Never publish:
+- `src/`, `scripts/`, tests, `tsconfig.json`, `vitest*.config.ts`
+- `AGENTS.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, `server.json`
+- `.github/`, `_archive/`, `.research/`, `.githooks/`, lockfiles
+
+`pnpm verify:package` runs `npm pack --dry-run` and fails on any unexpected
+path. `pnpm verify:release` enforces `package.json` == `server.json` and, when
+given a tag, `vX.Y.Z` == package version. Both run in CI and in the release
+workflow. `server.json` stays at the repo root for MCP Registry publication;
+it is intentionally not shipped to npm.
 
 ## Branch policy (main vs dev)
 
@@ -146,7 +168,8 @@ Never:
   changelogs) must not reference dev-only paths (`_archive/`, `.research/`,
   agent scratch). Point at the concept ("full design ships on dev") instead of
   the path.
-- **Releases:** tag `main` with `vX.Y.Z`; `release.yml` builds, publishes a
-  GitHub Release, and publishes to npm via Trusted Publishing (OIDC, no token).
-  Prerelease tags (`vX.Y.Z-foo`) use the `alpha` dist-tag; stable tags use
-  `latest`. Never release from dev.
+- **Releases:** bump `package.json` and `server.json` together, promote to main,
+  then tag `main` with `vX.Y.Z`; `release.yml` verifies metadata and the
+  dist-only tarball, publishes a GitHub Release, and publishes to npm via
+  Trusted Publishing (OIDC, no token). Prerelease tags (`vX.Y.Z-foo`) use the
+  `alpha` dist-tag; stable tags use `latest`. Never release from dev.

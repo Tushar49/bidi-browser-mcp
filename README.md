@@ -53,7 +53,7 @@ throttling, touch emulation, CSS manipulation.
 
 ## Requirements
 
-- Node.js 20+
+- Node.js 20.19+
 - Firefox 129+ (BiDi is built in)
 - Two runtime dependencies: `ws`, `@modelcontextprotocol/sdk`
 
@@ -92,6 +92,9 @@ Or reference it from an MCP client without a global install:
 }
 ```
 
+The published package contains only compiled `dist/` plus `README`, `LICENSE`,
+and `package.json`. Repository docs, tests, and build scripts are not installed.
+
 ## Build from source
 
 ```bash
@@ -101,7 +104,7 @@ pnpm typecheck
 pnpm test
 ```
 
-Point your MCP client at `dist/index.js` while developing.
+Point your MCP client at `dist/bin.js` while developing.
 
 ## Configuration
 
@@ -123,7 +126,8 @@ Point your MCP client at `dist/index.js` while developing.
 
 ```
 src/
-├── index.ts        # entry → dist/index.js
+├── bin.ts          # CLI entry (shebang) → dist/bin.js
+├── index.ts        # public API: createServer(), VERSION
 ├── config.ts       # env-based config
 ├── types.ts        # shared contracts
 ├── connection/     # BiDi client, discovery, health, event pipeline

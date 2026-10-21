@@ -60,6 +60,12 @@ jobs:
 
       - run: pnpm run build
 
+      - name: Verify release metadata (package.json, server.json, tag)
+        run: pnpm run verify:release "$GITHUB_REF_NAME"
+
+      - name: Verify published tarball is dist-only
+        run: pnpm run verify:package
+
       - name: Determine npm dist-tag
         id: disttag
         run: |
@@ -72,9 +78,10 @@ jobs:
       - name: Publish to npm (trusted publishing, tokenless OIDC)
         run: npm publish --provenance --tag ${{ steps.disttag.outputs.tag }}
 
-      - name: Package release bundle
+      - name: Package release bundle (runtime files only)
         run: |
-          tar -czf "bidi-browser-mcp-dist-${GITHUB_REF_NAME}.tar.gz" dist/ package.json pnpm-lock.yaml README.md
+          tar --exclude='*.map' -czf "bidi-browser-mcp-dist-${GITHUB_REF_NAME}.tar.gz" \
+            dist/ package.json README.md LICENSE server.json
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
