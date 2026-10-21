@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Warn if staged code files don't include CHANGELOG.md update.
+# Non-blocking: prints warning but exits 0.
+# To skip: git commit --no-verify
+
+set -uo pipefail
+
+staged=$(git diff --cached --name-only)
+[[ -z "$staged" ]] && exit 0
+
+code_changed=0
+changelog_changed=0
+
+while IFS= read -r f; do
+  [[ -z "$f" ]] && continue
+  case "$f" in
+    CHANGELOG.md|*/CHANGELOG.md)
+      changelog_changed=1
+      ;;
+    *.md|*.txt|*.png|*.jpg|*.jpeg|*.gif|*.svg|*.pdf|*.docx|.gitignore|.gitattributes|LICENSE|LICENSE.*)
+      ;;
+    *.json|*.yml|*.yaml|*.toml|*.ini|*.cfg)
+      ;;
+    *)
+      code_changed=1
+      ;;
+  esac
+done <<< "$staged"
+
+if [[ $code_changed -eq 1 && $changelog_changed -eq 0 ]]; then
+  echo ""
+  echo "WARN: Code files were modified but CHANGELOG.md is not staged."
+  echo "  Consider adding a CHANGELOG entry under [Unreleased] or the next version."
+  echo "  This is just a reminder - not blocking your commit."
+  echo "  (To skip future reminders: git commit --no-verify)"
+  echo ""
+fi
+
+exit 0
