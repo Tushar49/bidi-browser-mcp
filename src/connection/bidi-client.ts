@@ -136,6 +136,9 @@ export class BiDiClient {
         }
         this.#state = state;
         socket.removeAllListeners();
+        // ws emits the handshake-abort error asynchronously; without a
+        // listener the 'error' event crashes the process.
+        socket.on('error', () => {});
         try {
           socket.terminate();
         } catch {
@@ -228,8 +231,14 @@ export class BiDiClient {
         resolve();
         return;
       }
+      // `close()` throws synchronously on a CONNECTING socket; the 'error'
+      // and 'close' events still arrive and resolve the promise.
+      try {
+        socket.close();
+      } catch {
+        // Socket is still handshaking; the close events will follow.
+      }
       socket.once('close', () => resolve());
-      socket.close();
     });
   }
 

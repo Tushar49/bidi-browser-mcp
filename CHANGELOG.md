@@ -99,6 +99,12 @@ All notable changes to BiDi Browser MCP Server will be documented in this file.
   Remote Agent 403s the first upgrade while the browser finishes
   initializing); a failed upgrade never creates a session, so retrying is
   safe.
+- A hung WebSocket handshake no longer crashes the process: `ws` emits the
+  handshake-abort `'error'` asynchronously after `terminate()`, which crashed
+  Node when the abort raced listener removal (found against Brave's hanging
+  CDP endpoint); a no-op error listener now absorbs it and connect fails
+  cleanly with `DISCOVERY_FAILED`.
+- `close()` no longer throws when called on a still-handshaking socket.
 - A `SESSION_BUSY` conflict is no longer masked by another candidate's
   handshake error in `details.lastError`.
 - `connect` no longer leaks a session when session services fail to start:
