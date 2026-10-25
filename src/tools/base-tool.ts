@@ -65,3 +65,23 @@ export function requireAction(
   }
   return action;
 }
+
+const FIREFOX_FAMILY_NAMES = ['firefox', 'zen', 'librewolf', 'waterfox', 'floorp'];
+
+/**
+ * Gate Firefox-family-only features (containers, Zen spaces). Unknown
+ * browser names pass — only a confidently-Chromium name is refused.
+ */
+export function assertFirefoxFamily(browserName: unknown, feature: string): void {
+  const name = String(browserName ?? '').toLowerCase();
+  if (name === '' || FIREFOX_FAMILY_NAMES.includes(name)) {
+    return;
+  }
+  throw new ActionableError(
+    'UNSUPPORTED',
+    `${feature} is a Firefox-family feature; this session reports browser "${name}".`,
+    {
+      fix: 'Connect to a Firefox-family browser (Firefox, Zen, LibreWolf, Waterfox, Floorp).',
+    }
+  );
+}

@@ -2,6 +2,20 @@
 
 All notable changes to BiDi Browser MCP Server will be documented in this file.
 
+## [0.1.8] - 2026-10-25
+
+### Added
+- Chromium story: `pnpm detect` marks Chromium-family processes `[cdp-only]`
+  (Chrome, Brave, Edge, Vivaldi, Opera — webview noise filtered), README
+  documents the chromium-bidi mapper path via `BIDI_WS_URL`, and Firefox-only
+  tools (`context`, `spaces`) refuse non-Firefox sessions with `UNSUPPORTED`
+  and a clear fix instead of a cryptic BiDi error.
+- Session state survives socket drops: a dropped WebSocket clears the adopted
+  session immediately (honest `status`), and the next `connect()` recovers
+  the orphaned session through its persisted id and takes a fresh one.
+- Snapshot traversal is single-pass (shadow hosts recurse before the
+  interesting/visible filter, halving DOM scans per root).
+
 ## [0.1.7] - 2026-10-23
 
 ### Security

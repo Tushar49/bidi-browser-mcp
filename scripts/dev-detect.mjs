@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
- * Show Firefox-family processes that may have the Remote Agent enabled.
- *
- * This is a diagnostic helper only. It never mutates the browser.
+ * Show Firefox-family and Chromium-family processes and whether a Remote
+ * Agent / DevTools port is on. Read-only diagnostics; never mutates a
+ * browser. Chromium CDP ports are not BiDi endpoints — connecting to them
+ * requires the chromium-bidi mapper (see README).
  */
 
 import { platform } from 'node:os';
@@ -12,26 +13,18 @@ import { extractRemoteDebuggingPort } from '../dist/connection/browser-discovery
 
 const execFileAsync = promisify(execFile);
 
-const names = ['firefox', 'zen', 'librewolf', 'waterfox', 'floorp'];
+const firefoxFamily = ['firefox', 'zen', 'librewolf', 'waterfox', 'floorp'];
+const chromiumFamily = ['chrome', 'brave', 'msedge', 'chromium', 'vivaldi', 'opera'];
 
-async function windowsProcesses() {
-  const script = `Get-CimInstance Win32_Process | Where-Object { $_.Name -match '${names.join('|')}' } | Select-Object ProcessId,Name,CommandLine | ConvertTo-Json -Compress`;
+async function windowsProcesses(pattern) {
+  const script = `Get-CimInstance Win32_Process | Where-Object { $_.Name -match '${pattern}' } | Select-Object ProcessId,Name,CommandLine | ConvertTo-Json -Compress`;
   const { stdout } = await execFileAsync(
     'powershell.exe',
     ['-NoProfile', '-Command', script],
     { timeout: 5_000, maxBuffer: 10 * 1024 * 1024 }
   );
 
-  // No matches: PowerShell prints nothing at all — never JSON.
-  if (stdout.trim() === '') {
-    return [];
-  }
-  let parsed;
-  try {
-    parsed = JSON.parse(stdout);
-  } catch {
-    return [];
-  }
+  const parsed = JSON.parse(stdout);
   const items = Array.isArray(parsed) ? parsed : [parsed];
   return items
     .filter((item) => typeof item.CommandLine === 'string')
@@ -42,7 +35,7 @@ async function windowsProcesses() {
     }));
 }
 
-async function unixProcesses() {
+async function unixProcesses(pattern) {
   const { stdout } = await execFileAsync('ps', ['-axo', 'pid=,command='], {
     timeout: 5_000,
     maxBuffer: 10 * 1024 * 1024,
@@ -56,7 +49,7 @@ async function unixProcesses() {
       continue;
     }
     const commandLine = match[2];
-    if (!names.some((name) => commandLine.includes(name))) {
+    if (!pattern.split('|').some((name) => commandLine.includes(name))) {
       continue;
     }
 
@@ -70,16 +63,27 @@ async function unixProcesses() {
   return items;
 }
 
-const items = platform() === 'win32' ? await windowsProcesses() : await unixProcesses();
+const pattern = [...firefoxFamily, ...chromiumFamily].join('|');
+const items =
+  platform() === 'win32' ? await windowsProcesses(pattern) : await unixProcesses(pattern);
 
 if (items.length === 0) {
-  console.log('no Firefox-family processes found');
+  console.log('no Firefox-family or Chromium-family processes found');
   process.exit(0);
 }
 
 for (const item of items) {
   const port = extractRemoteDebuggingPort(item.commandLine);
+  const haystack = `${item.name ?? ''} ${item.commandLine}`.toLowerCase();
+  if (haystack.includes('webview')) {
+    continue; // Embedded webviews are not browsers.
+  }
+  const isChromium = chromiumFamily.some((name) => haystack.includes(name));
+  const kind = isChromium ? 'cdp-only' : 'bidi';
   console.log(
-    `${item.name ?? 'unknown'} pid=${item.processId} remoteDebuggingPort=${port ?? 'off'}`
+    `${item.name ?? 'unknown'} pid=${item.processId} remoteDebuggingPort=${port ?? 'off'} [${kind}]`
   );
 }
+console.log('');
+console.log('bidi = Firefox-family: attach directly. cdp-only = Chromium: needs');
+console.log('the chromium-bidi mapper; see README "Chromium browsers".');

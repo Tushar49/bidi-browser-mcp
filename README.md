@@ -17,13 +17,12 @@
 
 ## Status
 
-v0.1.7 Firefox-specific layer. The stdio MCP server boots and exposes `ping`,
-`browser`, `tabs`, `page` (snapshot/content), `console`, `observe`, `context`
-(containers), `spaces` (Zen), and `cleanup`. Config, errors, result envelopes,
-the tool registry, discovery, the BiDi client, the single-session manager, the
-event pipeline, the context manager, the snapshot stack, and the profile store
-are tested. Chromium support lands in v0.1.8; the first public npm release is
-v0.1.9.
+v0.1.8 hardening + Chromium path. The stdio MCP server boots and exposes
+`ping`, `browser`, `tabs`, `page` (snapshot/content), `console`, `observe`,
+`context` (containers), `spaces` (Zen), and `cleanup`. Socket drops clear
+session state honestly and the next connect recovers; Chromium runs through
+the chromium-bidi mapper with Firefox-only tools gated. The full matrix and
+docs land in v0.1.9 — the first public npm release.
 
 v1 attaches to a Firefox you start; it does not launch, profile-manage, or close
 the browser. Launch/private/incognito control is future work.
@@ -82,6 +81,21 @@ claim.
 - Firefox 129+ for the core surface; 153 ESR recommended; 158+ for the full
   surface (debugger, profiler, screencast, newer emulation)
 - Two runtime dependencies: `ws`, `@modelcontextprotocol/sdk`
+
+## Chromium browsers (Chrome, Brave, Edge, …)
+
+Chromium does not speak WebDriver BiDi natively yet — `--remote-debugging-port`
+exposes CDP, which is a different protocol. The bridge is the
+[chromium-bidi mapper](https://github.com/GoogleChromeLabs/chromium-bidi):
+
+1. Launch Chromium with `--remote-debugging-port=<port>`.
+2. Run the mapper (requires chromedriver; see the repo's examples README).
+3. Point this server at the mapper: `BIDI_WS_URL=ws://127.0.0.1:<mapper-port>/session`.
+
+`ping`, `browser`, `tabs`, `page`, `console`, `observe`, and `cleanup` work
+through the mapper. Firefox-family features (`context`, `spaces`) refuse with
+a clear `UNSUPPORTED` error on non-Firefox sessions, and `pnpm detect` marks
+Chromium processes `[cdp-only]`.
 
 ## Start Firefox with BiDi
 

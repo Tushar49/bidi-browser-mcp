@@ -181,6 +181,13 @@ export class MockBiDiServer {
     }
   }
 
+  /** Terminate every open socket without a close frame (simulates a crash). */
+  dropConnections(): void {
+    for (const socket of this.#sockets) {
+      socket.terminate();
+    }
+  }
+
   async #handleMessage(socket: WebSocket, data: RawData): Promise<void> {
     let command: BiDiCommand;
     try {

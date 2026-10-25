@@ -1,6 +1,6 @@
 # bidi-browser-mcp — AGENTS.md
 
-**Branches:** main (public) · dev (working) · **Version:** 0.1.7
+**Branches:** main (public) · dev (working) · **Version:** 0.1.8
 Contributor + agent guide for this repo — identical file on both branches.
 Short on purpose — details live in CONTRIBUTING.md (workflow), README.md
 (product), CHANGELOG.md (history).
@@ -13,13 +13,12 @@ WebSocket (`ws://127.0.0.1:9222/session`). Modular TypeScript, two runtime deps
 only (`ws`, `@modelcontextprotocol/sdk`). No browser launch, no driver binary,
 no Puppeteer/Playwright.
 
-Status: v0.1.7 Firefox-specific layer. The stdio server boots and exposes
+Status: v0.1.8 hardening + Chromium path. The stdio server boots and exposes
 `ping`, `browser`, `tabs`, `page` (snapshot/content), `console`, `observe`,
-`context` (containers), `spaces` (Zen), and `cleanup`. Config, errors, result
-envelopes, registry, discovery, BiDi client, the single-session manager, the
-event pipeline, the context manager, the snapshot stack, and the profile store
-are tested. Chromium support lands in v0.1.8; the first public npm release is
-v0.1.9.
+`context` (containers), `spaces` (Zen), and `cleanup`. Socket drops clear
+session state honestly and the next connect recovers; Chromium runs through
+the chromium-bidi mapper with Firefox-only tools gated. The full matrix and
+docs land in v0.1.9 — the first public npm release.
 
 ## Structure
 

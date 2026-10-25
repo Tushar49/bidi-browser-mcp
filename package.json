@@ -1,6 +1,6 @@
 {
   "name": "bidi-browser-mcp",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "WebDriver BiDi browser MCP server — control your real Firefox over the W3C standard protocol",
   "mcpName": "io.github.tushar49/bidi-browser-mcp",
   "type": "module",

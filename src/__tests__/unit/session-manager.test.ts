@@ -75,6 +75,35 @@ describe('SessionManager', () => {
     expect(server.requests.some((r) => r.method === 'session.end')).toBe(true);
   });
 
+  it('reports honest state and recovers after the socket drops', async () => {
+    server = new MockBiDiServer();
+    const url = await server.start();
+    const config = loadConfig({
+      BIDI_WS_URL: url,
+      BIDI_TEMP_DIR: '.temp/test-drop',
+    });
+    const manager = new SessionManager({ config, serverVersion: '0.1.8' });
+
+    await manager.connect();
+    expect((await manager.status()).connected).toBe(true);
+    expect(manager.runtime).toBeDefined();
+
+    // The browser (or network) drops the socket without a close frame.
+    server.dropConnections();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // State is honest immediately; the mock's session slot is still held.
+    expect(await manager.status()).toEqual({ connected: false });
+    expect(manager.runtime).toBeUndefined();
+
+    // The next connect recovers the orphaned session and takes a fresh one.
+    const status = await manager.connect();
+    expect(status.connected).toBe(true);
+    expect(status.sessionId).toContain('mock-session-');
+
+    await manager.disconnect();
+  });
+
   it('recovers a session left behind by a dead process', async () => {
     server = new MockBiDiServer();
     const url = await server.start();

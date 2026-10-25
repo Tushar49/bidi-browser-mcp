@@ -137,8 +137,11 @@ const SNAPSHOT_SCRIPT = String.raw`
   function collectFrom(root, doc, out, frameChain, shadowHost) {
     const all = root.querySelectorAll('*');
     for (const el of all) {
-      if (!interesting(el)) continue;
-      if (!visible(el)) continue;
+      // Shadow hosts may be plain divs, so recurse before the filter.
+      if (el.shadowRoot) {
+        collectFrom(el.shadowRoot, doc, out, frameChain, cssPath(el, doc));
+      }
+      if (!interesting(el) || !visible(el)) continue;
       const role = roleOf(el);
       const rect = el.getBoundingClientRect();
       const states = statesOf(el, doc);
@@ -153,11 +156,6 @@ const SNAPSHOT_SCRIPT = String.raw`
       if (shadowHost !== null) info.shadowHost = shadowHost;
       if (Object.keys(states).length > 0) info.states = states;
       out.push(info);
-    }
-    for (const el of all) {
-      if (el.shadowRoot) {
-        collectFrom(el.shadowRoot, doc, out, frameChain, cssPath(el, doc));
-      }
     }
   }
 

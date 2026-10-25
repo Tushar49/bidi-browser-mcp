@@ -29,6 +29,8 @@ export class BiDiClient {
   readonly #timeoutMs: number;
   readonly #pending = new Map<number, PendingRequest>();
   readonly #eventHandlers = new Set<(event: BiDiEvent) => void>();
+  readonly #closeHandlers = new Set<() => void>();
+  #closeHandlersFired = false;
   #socket?: WebSocket;
   #state: BiDiClientState = 'disconnected';
   #nextId = 1;
@@ -46,6 +48,14 @@ export class BiDiClient {
     this.#eventHandlers.add(handler);
     return () => {
       this.#eventHandlers.delete(handler);
+    };
+  }
+
+  /** Fires when the socket drops for any reason. One-shot semantics. */
+  onClose(handler: () => void): () => void {
+    this.#closeHandlers.add(handler);
+    return () => {
+      this.#closeHandlers.delete(handler);
     };
   }
 
@@ -107,6 +117,7 @@ export class BiDiClient {
 
   /** One full WebSocket handshake attempt. Resolves on 'open'. */
   #openSocket(): Promise<void> {
+    this.#closeHandlersFired = false;
     return new Promise<void>((resolve, reject) => {
       const socket = new WebSocket(this.url);
       // Identity guard: after a timeout (or a retry) abandons this socket, a
@@ -170,6 +181,7 @@ export class BiDiClient {
         clearTimeout(timer);
         this.#state = 'disconnected';
         this.#failPending('CONNECTION_CLOSED', 'BiDi connection closed.');
+        this.#fireClose();
       });
     });
   }
@@ -285,10 +297,21 @@ export class BiDiClient {
   }
 
   #failPending(code: 'CONNECTION_CLOSED' | 'CONNECTION_FAILED', message: string): void {
+    this.#fireClose();
     for (const pending of this.#pending.values()) {
       clearTimeout(pending.timer);
       pending.reject(new ActionableError(code, message));
     }
     this.#pending.clear();
+  }
+
+  #fireClose(): void {
+    if (this.#closeHandlersFired) {
+      return;
+    }
+    this.#closeHandlersFired = true;
+    for (const handler of this.#closeHandlers) {
+      handler();
+    }
   }
 }

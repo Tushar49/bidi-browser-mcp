@@ -240,6 +240,20 @@ export class SessionManager implements SessionManagerLike {
           this.#persistLastSession(sessionId, candidate.endpoint);
         }
 
+        // A dropped socket must not leave a ghost session behind: clear the
+        // adopted state so status() reports honestly and the next connect()
+        // can recover via the persisted session id.
+        client.onClose(() => {
+          if (this.#client === client) {
+            this.#client = undefined;
+            this.#sessionId = undefined;
+            this.#capabilities = undefined;
+            this.#profile = undefined;
+            this.#runtime?.events.detach();
+            this.#runtime = undefined;
+          }
+        });
+
         return { ok: true, status: this.#status() };
       } catch (error) {
         // Firefox allows one BiDi session per process - never leave a socket

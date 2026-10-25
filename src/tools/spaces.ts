@@ -1,5 +1,5 @@
 import type { JsonSchema, SpaceListing } from '../types.js';
-import { defineTool, requireAction } from './base-tool.js';
+import { assertFirefoxFamily, defineTool, requireAction } from './base-tool.js';
 import { ActionableError } from '../utils/errors.js';
 import { ok } from '../utils/result.js';
 import { joinContainerNames, readContainers, readSpaces } from '../profile/profile-store.js';
@@ -65,6 +65,7 @@ export const spacesTool = defineTool({
         fix: 'Call browser.connect first.',
       });
     }
+    assertFirefoxFamily((await session.status()).browser?.browserName, 'Zen spaces');
 
     const status = await session.status();
     const profilePath = status.browser?.['moz:profile'];
