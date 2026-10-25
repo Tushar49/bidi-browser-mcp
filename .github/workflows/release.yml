@@ -10,7 +10,7 @@ name: Release
 #
 # Usage:
 #   1. Promote dev → main (promote.yml, gives main the release version).
-#   2. Bump package.json + VERSION in src/index.ts, commit on dev, promote.
+#   2. Bump package.json + server.json together, commit on dev, promote.
 #   3. Tag main:  git tag vX.Y.Z && git push origin vX.Y.Z
 #   4. This workflow builds, attaches the bundle, publishes the GitHub
 #      Release and npm (no token needed — OIDC via GitHub).

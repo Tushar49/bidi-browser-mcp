@@ -63,7 +63,16 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch origin dev
-          git merge --no-ff --no-commit origin/dev || true
+          if ! git merge --no-ff --no-commit origin/dev; then
+            if ! git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
+              echo "❌ Merge failed before reaching conflict state — aborting."
+              echo "   (unrelated histories, ref failure, or dirty checkout — fix manually)"
+              git merge --abort 2>/dev/null || git reset --hard origin/main
+              exit 1
+            fi
+            # Merge stopped on conflicts: MERGE_HEAD exists, conflict check below.
+            echo "Merge stopped with conflicts — continuing to conflict handling."
+          fi
 
       - name: Sync .gitignore from dev shadow copy (when dev changed it)
         run: |
@@ -105,6 +114,10 @@ jobs:
       - name: Commit and push to main
         run: |
           git status --short
+          if ! git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
+            echo "❌ No merge in progress — refusing to create a merge commit."
+            exit 1
+          fi
           if git diff --cached --quiet; then
             git commit --allow-empty -m "Merge dev → main: ${{ inputs.version }}"
           else

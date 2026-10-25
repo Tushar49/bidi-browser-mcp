@@ -1,9 +1,19 @@
 # BiDi Browser MCP Server — Complete Build Plan (v2, Post-Critique)
 
-**Name**: `bidi-browser-mcp`  
-**Repo root**: `./` (relative — no absolute paths)  
-**Reference project**: `../cdp-browser-mcp/MCP Server/` (Tushar49 CDP MCP v5)  
-**Research**: `_archive/research/` folder (8 files covering BiDi API, protocols, Foxbridge, MCP servers)
+> **Superseded in part by [`../October2026/`](../October2026/README.md).** The
+> October pass updates the BiDi surface (Firefox 158), adds debugger/profiler,
+> and changes the release sequencing. Use this file for the original tool
+> inventory and architecture rationale; use the October plan for execution.
+> See [`../October2026/july-carryover.md`](../October2026/july-carryover.md)
+> for what survived.
+
+**Name**: `bidi-browser-mcp`
+
+**Repo root**: `./` (relative - no absolute paths)
+
+**Reference project**: `../../../../cdp-browser-mcp/MCP Server/` (Tushar49 CDP MCP v5)
+
+**Research**: `_archive/research/July2026/` folder (8 files covering BiDi API, protocols, Foxbridge, MCP servers)
 
 ---
 

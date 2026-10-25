@@ -46,7 +46,7 @@
 
 | Item | Source | Destination |
 |------|--------|-------------|
-| Passwords | Login Data SQLite + DPAPI | Firefox CSV → bout:logins import |
+| Passwords | Login Data SQLite + DPAPI | Firefox CSV → about:logins import |
 | Bookmarks | Bookmarks JSON | Netscape HTML → Library import |
 | Extensions | Chrome extensions manifest.json | HTML page of AMO install links |
 | **Open tabs** | Sessions/Session_* SNSS binary | **ecovery.jsonlz4** (Firefox session format) |
@@ -62,11 +62,11 @@ python -m foxport.cli migrate --source \"Brave/Default\" --target \"Firefox/defa
 **Supported sources**: Chrome, Brave, Edge, Vivaldi, Opera, Opera GX, Arc, Thorium, Yandex
 **Supported targets**: Firefox, LibreWolf, Waterfox, Floorp, Mullvad Browser, Tor Browser, Zen Browser
 
-### 3. Firefox Built-in Import (bout:import)
+### 3. Firefox Built-in Import (about:import)
 
 - Migrates bookmarks, history, passwords, settings from Chrome
 - Does **NOT** migrate tab groups
-- Access via bout:import in Firefox URL bar
+- Access via about:import in Firefox URL bar
 
 ## Tab Group Sync Tools
 
@@ -97,6 +97,6 @@ python -m foxport.cli migrate --source \"Brave/Default\" --target \"Firefox/defa
 |------|-----------|
 | Migrate **tab groups** Chrome → Firefox | **Chromium Tab Migrator** |
 | Migrate **everything** (passwords, bookmarks, extensions, open tabs) | **FoxPort** |
-| Quick bookmarks/passwords import | **Firefox bout:import** |
+| Quick bookmarks/passwords import | **Firefox about:import** |
 | Sync tab groups across Firefox devices | **Tab Group Syncer** |
 | Auto-group tabs by domain | **Auto Tab Groups** |

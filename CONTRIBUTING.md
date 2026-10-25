@@ -4,9 +4,11 @@
 
 ```bash
 pnpm install
+pnpm setup
 pnpm build
 pnpm typecheck
 pnpm test
+pnpm smoke
 pnpm verify:package
 ```
 
@@ -33,17 +35,38 @@ Key principles:
 - **Actionable errors** — every error tells the user how to fix it
 - **Agent-friendly** — tool descriptions are the documentation
 - **Minimal dependencies** — only `ws` and `@modelcontextprotocol/sdk`
-- **BiDi-native** — no CDP assumptions (single session, no a11y tree)
+- **BiDi-native** — no CDP assumptions (single session, no full a11y tree)
+- **Minimal code** — add a helper on the second real use, not the first
+- **Tested** — every new module has a unit test; every fix gets a regression test
+
+## Carcass conventions (v0.1.3)
+
+- `src/config.ts` is the only place that reads `process.env`.
+- Shared result/error/validation helpers live in `src/utils/`; do not duplicate
+  the envelope.
+- Future folders (`connection/`, `session/`, `snapshot/`) have a README until
+  their wave starts. Replace the README with real modules, not empty stubs.
+- `src/index.ts` stays side-effect-free on import; `src/bin.ts` owns stdio.
+- `dist/` is generated. Never edit it.
 
 ## Adding a New Tool
 
 1. Create `src/tools/my-tool.ts`
-2. Use `defineTool()` from `./base-tool.js`
-3. Export `registerMyToolTools(registry, ctx)`
-4. Register it in `createServer()` in `src/index.ts`
-5. Update README.md tool listing
-6. Update CHANGELOG.md
-7. Add unit tests under `src/__tests__/unit/`
+2. Use `defineTool()` from `./base-tool.js`; declare `toolset`, actions, input
+   schema, output schema where stable, and annotations
+3. Validate arguments with `src/utils/assert.ts` (or a future tiny helper)
+4. Return the shared result via `ok()` / `fail()` from `src/utils/result.js`
+5. Register the exported tool in `createServer()` in `src/index.ts`
+6. Update README.md tool listing
+7. Update CHANGELOG.md
+8. Add unit tests under `src/__tests__/unit/`; use `MockBiDiServer`, not Firefox
+
+## Local OpenCode config
+
+The local dev entry points at `dist/bin.js` with an absolute path, outside the
+repo. Run `pnpm build`, then restart the MCP server. After the first npm
+publish, switch to `pnpm dlx bidi-browser-mcp@latest` (or a global install).
+Do not commit machine-specific paths.
 
 ## Packaging
 
@@ -67,10 +90,10 @@ pnpm test:integration     # Integration tests (needs a live Firefox)
 pnpm benchmark            # Local benchmarks (needs a live Firefox)
 ```
 
-Integration tests opt in via `FIREFOX_BIDI_WS_URL`; they never run in CI.
+Integration tests opt in via `BIDI_WS_URL`; they never run in CI.
 
 ## Code Style
 - TypeScript strict mode
 - No `any` without comment explaining why
-- Actionable errors via `Errors.*` factories
+- Actionable errors via `ActionableError` (`src/utils/errors.ts`)
 - Tool descriptions include agent guidance

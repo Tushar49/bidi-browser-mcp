@@ -1,6 +1,6 @@
 # bidi-browser-mcp — AGENTS.md
 
-**Branches:** main (public) · dev (working) · **Version:** 0.1.0
+**Branches:** main (public) · dev (working) · **Version:** 0.1.7
 Contributor + agent guide for this repo — identical file on both branches.
 Short on purpose — details live in CONTRIBUTING.md (workflow), README.md
 (product), CHANGELOG.md (history).
@@ -13,8 +13,13 @@ WebSocket (`ws://127.0.0.1:9222/session`). Modular TypeScript, two runtime deps
 only (`ws`, `@modelcontextprotocol/sdk`). No browser launch, no driver binary,
 no Puppeteer/Playwright.
 
-Status: pre-alpha scaffold. The stdio MCP server boots; connection, session,
-snapshot, and tool modules land per the wave plan.
+Status: v0.1.7 Firefox-specific layer. The stdio server boots and exposes
+`ping`, `browser`, `tabs`, `page` (snapshot/content), `console`, `observe`,
+`context` (containers), `spaces` (Zen), and `cleanup`. Config, errors, result
+envelopes, registry, discovery, BiDi client, the single-session manager, the
+event pipeline, the context manager, the snapshot stack, and the profile store
+are tested. Chromium support lands in v0.1.8; the first public npm release is
+v0.1.9.
 
 ## Structure
 
@@ -26,12 +31,13 @@ snapshot, and tool modules land per the wave plan.
 │   ├── index.ts               # public API: createServer(), VERSION — no side effects
 │   ├── config.ts              # only env reader (BIDI_*)
 │   ├── types.ts               # shared contracts
-│   ├── connection/            # BiDi client, discovery, health, events   [planned]
-│   ├── session/               # single-session manager, context manager  [planned]
-│   ├── snapshot/              # DOM snapshot, cache, resolver, optimizer [planned]
-│   ├── tools/                 # 15 tools / action-based dispatch         [planned]
-│   ├── utils/                 # wait, errors, response builder, temp     [planned]
-│   └── __tests__/             # unit + integration + benchmarks
+│   ├── connection/            # BiDi client, discovery, events, health [health planned]
+│   ├── profile/               # containers.json + Zen session store (read-only)
+│   ├── session/               # single-session manager, context manager
+│   ├── snapshot/              # DOM snapshot, cache, resolver, optimizer
+│   ├── tools/                 # base-tool, registry, ping, browser, tabs, page, console, observe, cleanup
+│   ├── utils/                 # errors, result, assert (shared helpers)
+│   └── __tests__/             # unit + mocks; integration/benchmark opt-in
 ├── scripts/                   # postbuild chmod, release + tarball checks
 ├── server.json                # MCP Registry metadata (never packed into npm)
 ├── .github/workflows/         # ci.yml, guard-main.yml, promote.yml, release.yml
@@ -47,12 +53,14 @@ holds protocol/browser research.
 
 | Constraint | Consequence |
 |---|---|
-| Firefox allows **one BiDi session** | session-manager reuses it; never error on a second `session.new` |
-| **No accessibility tree** | snapshots use `script.evaluate` + JS DOM traversal |
+| Firefox allows **one BiDi session** | session-manager reuses it; a second `session.new` returns `BIDI_SESSION_BUSY`, never a retry loop |
+| **No in-browser Remote Agent toggle** | only `--remote-debugging-port`; process discovery is read-only and never relaunches |
+| **No accessibility tree** | snapshots use `script.evaluate` + JS DOM traversal; `locateNodes` is a resolver only |
 | **No click/type command** | resolve coordinates via script, then `input.performActions` |
-| `setViewport` is in **browsingContext** | not in `emulation` (geolocation/locale/orientation only) |
-| **No debugger / profiler** | no breakpoints, stepping, performance, memory, CSS domains |
-| Output modes are env-driven | `BIDI_OUTPUT_MODE=full|inline|file`, `BIDI_MAX_INLINE_LEN` |
+| `setViewport` is in **browsingContext** | not in `emulation`; emulation has geo/locale/orientation/timezone/UA/offline |
+| **Debugger/profiler exist** | `moz:debugging` 153+, `moz:profiler` 154+; opt-in `devtools` toolset, not core |
+| Output modes are env-driven | `BIDI_OUTPUT_MODE=full|inline` (`file` is rejected — not implemented), `BIDI_MAX_INLINE_LEN`; `BIDI_TEMP_DIR` is parsed but unused until the file mode lands |
+| **One session per server process** | two MCP server processes cannot share it; broker is future work |
 
 ## Where to look
 
@@ -60,6 +68,8 @@ holds protocol/browser research.
 |---|---|
 | Add/change a tool | `src/tools/<name>.ts` + `registry.ts`, follow `base-tool.ts` (`defineTool`) |
 | Change connection/reconnect | `src/connection/{bidi-client,health-monitor,browser-discovery}.ts` |
+| Change event buffering/subscription | `src/connection/event-pipeline.ts` |
+| Read containers/spaces profile data | `src/profile/profile-store.ts` |
 | Change snapshots/element refs | `src/snapshot/{dom-snapshot,cache,element-resolver,token-optimizer}.ts` |
 | Change session/context locking | `src/session/{session-manager,context-manager}.ts` |
 | Change config surface | `src/config.ts` (only env reader) + `src/types.ts` |
@@ -70,10 +80,13 @@ holds protocol/browser research.
 
 ```bash
 pnpm install
+pnpm setup               # install + build + test + verify + smoke probe
 pnpm build              # tsc → dist/ + chmod bin on Unix
 pnpm typecheck          # tsc --noEmit (run before every commit — zero errors)
 pnpm lint               # alias of typecheck
 pnpm test               # unit (vitest)
+pnpm smoke              # zero-config Firefox/Zen BiDi probe
+pnpm detect             # show Firefox-family processes and Remote Agent port
 pnpm test:integration   # needs a real Firefox — local/dev only, not CI
 pnpm benchmark          # local/dev only
 pnpm verify:release     # package.json == server.json (and tag, when passed)
@@ -98,6 +111,33 @@ Machine-specific absolute paths live only in local tool config, never in repo
 files. Package-manager preference: pnpm / `pnpm dlx` first; npx/npm only when
 pnpm is unavailable.
 
+The local OpenCode config points `bidi-browser` at this checkout's
+`dist/bin.js` with an absolute path. Rebuild, then restart the MCP server.
+After the first npm publish, switch that entry to
+`pnpm dlx bidi-browser-mcp@latest` (or a global `bidi-browser-mcp`). Never commit
+the absolute path.
+
+## Code standards (carcass rules)
+
+- **Minimal code.** No speculative abstraction. Add a helper on the second
+  real use, not the first.
+- **Reuse before adding.** `utils/errors.ts`, `utils/result.ts`,
+  `utils/assert.ts`, `tools/base-tool.ts`, `tools/registry.ts` are the shared
+  spine. Do not create a second error/result/envelope shape.
+- **One env reader.** Only `config.ts` reads `process.env`; everything else
+  receives `Config` through `ServerContext`.
+- **Pure first.** Prefer pure functions. Classes only for stateful things
+  (registry, client, session manager).
+- **Tool contract.** Every tool goes through `defineTool`, declares an action
+  enum, input schema, annotations, and returns the shared result shape.
+- **Validate at the boundary.** Handlers validate their own args with
+  `assert.ts` (or a future tiny helper); no implicit casts.
+- **No `any`** without a justifying comment. No swallowed errors. No dead code.
+- **Future folders get a README**, not empty stubs. Replace it with real modules
+  when the wave starts.
+- **Dependency gate.** No new runtime dependency without a design note. Runtime
+  deps stay `ws` + `@modelcontextprotocol/sdk`.
+
 ## Development rules
 
 Always:
@@ -108,7 +148,9 @@ Always:
 5. Version bumps only via the release flow (package.json + server.json together;
    `VERSION` in `src/index.ts` derives from package.json).
 6. Unit tests are hermetic (MockBiDiServer); integration tests opt in via
-   `FIREFOX_BIDI_WS_URL`.
+   `BIDI_WS_URL`.
+7. Every new module has a unit test; every bug fix gets a regression test. Test
+   the contract, not the implementation detail.
 
 Never:
 1. Don't copy CDP's multi-session or accessibility-tree model into this repo.

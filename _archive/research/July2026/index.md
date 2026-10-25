@@ -1,5 +1,10 @@
 # Browser Automation Research — Index
 
+> **Latest pass:** [`../October2026/`](../October2026/README.md) - Firefox 158
+> BiDi surface, Playwright/Juggler internals, competitors, MCP 2026-07-28, and
+> the implementation plan. It supersedes parts of the July 2026 baseline below
+> (notably the "no debugger/profiler" claim).
+
 This directory contains comprehensive research on browser automation protocols, tools, and browser comparisons. Every file uses **relative links** — clone this repo anywhere and links between files will work.
 
 ## File Overview
@@ -51,7 +56,7 @@ CDP (Chromium native)                    Juggler (Playwright/Firefox)
 `
 
 ## External References
-- [CDP Browser MCP Server (your existing project)](../../cdp-browser-mcp/) — already cloned and configured
+- [CDP Browser MCP Server (your existing project)](../../../../cdp-browser-mcp/) — already cloned and configured
 - [WebDriver BiDi W3C Spec](https://www.w3.org/TR/webdriver-bidi/) — latest version
 - [CDP Protocol Browser](https://chromedevtools.github.io/devtools-protocol/) — Chrome DevTools Protocol docs
 - [Playwright](https://playwright.dev/) — cross-browser automation framework
