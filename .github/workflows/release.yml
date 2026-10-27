@@ -6,7 +6,8 @@ name: Release
 # to point at this repo + release.yml). Dev branch can never cut a release.
 #
 # npm dist-tag: prerelease tags (vX.Y.Z-foo) publish under "alpha",
-# stable tags publish under "latest".
+# stable tags publish under "latest". A version already on npm is skipped,
+# so a manual first publish (bootstrap) and workflow re-runs are safe.
 #
 # Usage:
 #   1. Promote dev → main (promote.yml, gives main the release version).
@@ -75,7 +76,20 @@ jobs:
             echo "tag=latest" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Check whether this version is already on npm
+        id: npm-version
+        run: |
+          name=$(node -p "require('./package.json').name")
+          version="${GITHUB_REF_NAME#v}"
+          if npm view "${name}@${version}" version >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::${name}@${version} is already published — skipping npm publish."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish to npm (trusted publishing, tokenless OIDC)
+        if: steps.npm-version.outputs.exists != 'true'
         run: npm publish --provenance --tag ${{ steps.disttag.outputs.tag }}
 
       - name: Package release bundle (runtime files only)
