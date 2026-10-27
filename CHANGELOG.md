@@ -2,6 +2,16 @@
 
 All notable changes to BiDi Browser MCP Server will be documented in this file.
 
+## [0.1.10] - 2026-10-27
+
+### Fixed
+- The release workflow skips the npm publish step when the version is already
+  on npm, so a manual first publish and workflow re-runs cannot fail the
+  release.
+- `package.json` `repository.url` is stored in the normalized form
+  (`git+https://…`) npm expects, removing the publish-time auto-correction
+  warning.
+
 ## [0.1.9] - 2026-10-27
 
 ### Added
