@@ -1,12 +1,18 @@
 # Connection layer
 
-Owns the WebSocket transport and Firefox-family discovery.
+Owns the WebSocket transport and browser discovery for both families.
 
 Modules:
 
-- `bidi-client.ts` — JSON-RPC framing, request IDs, timeouts, events.
-- `browser-discovery.ts` — profile-file, `profiles.ini`, process command-line,
-  and common-port candidates; endpoints are always probed before use.
+- `bidi-client.ts` — JSON-RPC framing, request IDs, timeouts, events, and the
+  optional in-process socket opener.
+- `browser-discovery.ts` — Firefox profile-file / `profiles.ini` / process
+  command-line / common-port candidates plus Chromium `DevToolsActivePort`
+  (standard dirs and running-process `--user-data-dir`); endpoints are always
+  probed before use.
+- `chromium-mapper.ts` — hosts the optional `chromium-bidi` mapper in-process
+  over CDP and exposes the `ws`-compatible socket `BiDiClient` expects.
+- `event-pipeline.ts` — event buffering and subscription fan-out.
 
 Planned modules:
 
