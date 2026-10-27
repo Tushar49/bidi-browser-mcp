@@ -65,17 +65,23 @@ const CONTEXT_NOT_FOUND_PATTERN = /no such context|unknown context|invalid conte
 
 /**
  * Turn the browser's "no such context" rejection into CONTEXT_NOT_FOUND, so
- * callers get the documented code instead of a raw BiDi message.
+ * callers get the documented code instead of a raw BiDi message. The flat
+ * `details.biDiCode` stamped by BiDiClient is checked before the message, so
+ * mapped errors keep their meaning regardless of prose.
  */
 export function toContextError(error: unknown): ActionableError {
-  if (
-    error instanceof ActionableError &&
-    CONTEXT_NOT_FOUND_PATTERN.test(error.message)
-  ) {
-    return new ActionableError('CONTEXT_NOT_FOUND', error.message, {
-      fix: 'Call tabs.list to see open contexts.',
-      cause: error,
-    });
+  if (error instanceof ActionableError) {
+    const biDiCode = error.details?.biDiCode;
+    if (
+      (typeof biDiCode === 'string' && CONTEXT_NOT_FOUND_PATTERN.test(biDiCode)) ||
+      CONTEXT_NOT_FOUND_PATTERN.test(error.message)
+    ) {
+      return new ActionableError('CONTEXT_NOT_FOUND', error.message, {
+        fix: 'Call tabs.list to see open contexts.',
+        cause: error,
+        details: error.details,
+      });
+    }
   }
   return toActionableError(error);
 }

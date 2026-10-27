@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { BiDiClient } from '../../connection/bidi-client.js';
+import {
+  BiDiClient,
+  translateBiDiError,
+} from '../../connection/bidi-client.js';
 import { MockBiDiServer } from '../mocks/bidi-server.js';
 
 describe('BiDiClient malformed-frame handling', () => {
@@ -78,6 +81,133 @@ describe('BiDiClient malformed-frame handling', () => {
       );
 
       await expect(pending).rejects.toMatchObject({ code: 'SESSION_BUSY' });
+    } finally {
+      release?.();
+      await client.close();
+    }
+  });
+});
+
+describe('translateBiDiError (plan decisions §1)', () => {
+  it('maps only the unambiguous flat codes', () => {
+    expect(translateBiDiError('no such frame', undefined)).toBe('FRAME_NOT_FOUND');
+    expect(translateBiDiError('no such element', undefined)).toBe('STALE_UID');
+    expect(translateBiDiError('no such node', undefined)).toBe('STALE_UID');
+    expect(translateBiDiError('detached shadow root', undefined)).toBe('STALE_UID');
+    expect(translateBiDiError('unknown command', undefined)).toBe('UNSUPPORTED');
+    expect(translateBiDiError('unsupported operation', undefined)).toBe('UNSUPPORTED');
+    expect(translateBiDiError('no such request', undefined)).toBe('NETWORK_ERROR');
+    expect(translateBiDiError('move target out of bounds', undefined)).toBe('NOT_INTERACTABLE');
+    expect(translateBiDiError('element not interactable', undefined)).toBe('NOT_INTERACTABLE');
+    expect(translateBiDiError('invalid argument', undefined)).toBe('INVALID_ARGUMENT');
+    expect(translateBiDiError('invalid selector', undefined)).toBe('INVALID_ARGUMENT');
+  });
+
+  it('keeps unknown errors session-level and busy detection prose-aware', () => {
+    expect(translateBiDiError('unknown error', undefined)).toBe('SESSION_FAILED');
+    expect(translateBiDiError(undefined, 'no such frame happened')).toBe(
+      'SESSION_FAILED'
+    );
+    expect(translateBiDiError('session not created', undefined)).toBe('SESSION_BUSY');
+    expect(translateBiDiError(undefined, 'Maximum number of active sessions')).toBe(
+      'SESSION_BUSY'
+    );
+  });
+});
+
+describe('BiDiClient failure details (plan decisions §1)', () => {
+  let server: MockBiDiServer | undefined;
+
+  afterEach(async () => {
+    await server?.stop();
+    server = undefined;
+  });
+
+  it('stamps details.method and biDiCode on mapped error frames', async () => {
+    server = new MockBiDiServer();
+    const url = await server.start();
+
+    let release: (() => void) | undefined;
+    server.on('browsingContext.getTree', () => {
+      return new Promise<Record<string, unknown>>((resolve) => {
+        release = () => resolve({ contexts: [] });
+      });
+    });
+
+    const client = new BiDiClient({ url, timeoutMs: 5_000 });
+    await client.connect();
+    const mock = server;
+    try {
+      const pending = client.request('browsingContext.getTree', {});
+      await vi.waitFor(() => {
+        expect(mock?.requests.length ?? 0).toBeGreaterThanOrEqual(1);
+      });
+
+      server.sendRawFrame(
+        JSON.stringify({ type: 'error', id: 1, error: 'no such frame', message: 'No such frame' })
+      );
+
+      await expect(pending).rejects.toMatchObject({
+        code: 'FRAME_NOT_FOUND',
+        details: {
+          method: 'browsingContext.getTree',
+          biDiCode: 'no such frame',
+        },
+      });
+    } finally {
+      release?.();
+      await client.close();
+    }
+  });
+
+  it('stamps details.method on timeouts', async () => {
+    server = new MockBiDiServer();
+    const url = await server.start();
+
+    let release: (() => void) | undefined;
+    server.on('session.status', () => {
+      return new Promise<Record<string, unknown>>((resolve) => {
+        release = () => resolve({ ready: true, message: '' });
+      });
+    });
+
+    const client = new BiDiClient({ url, timeoutMs: 40 });
+    await client.connect();
+    try {
+      await expect(client.request('session.status', {})).rejects.toMatchObject({
+        code: 'TIMEOUT',
+        details: { method: 'session.status' },
+      });
+    } finally {
+      release?.();
+      await client.close();
+    }
+  });
+
+  it('stamps details.method when the socket closes under pending requests', async () => {
+    server = new MockBiDiServer();
+    const url = await server.start();
+
+    let release: (() => void) | undefined;
+    server.on('session.status', () => {
+      return new Promise<Record<string, unknown>>((resolve) => {
+        release = () => resolve({ ready: true, message: '' });
+      });
+    });
+
+    const client = new BiDiClient({ url, timeoutMs: 5_000 });
+    await client.connect();
+    try {
+      const pending = client.request('session.status', {});
+      // Attach the expectation before closing: #failPending rejects while
+      // close() is still awaiting the socket event, and an unobserved
+      // rejection would surface as an unhandled error.
+      const assertion = expect(pending).rejects.toMatchObject({
+        code: 'CONNECTION_CLOSED',
+        details: { method: 'session.status' },
+      });
+      await client.close();
+      await assertion;
     } finally {
       release?.();
       await client.close();

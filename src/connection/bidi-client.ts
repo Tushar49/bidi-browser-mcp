@@ -1,5 +1,5 @@
 import { WebSocket } from 'ws';
-import type { BiDiEvent, BiDiMessage } from '../types.js';
+import type { ActionableErrorCode, BiDiEvent, BiDiMessage } from '../types.js';
 import type { BiDiSocket } from './chromium-mapper.js';
 import { ActionableError } from '../utils/errors.js';
 
@@ -7,6 +7,8 @@ interface PendingRequest {
   resolve: (value: Record<string, unknown>) => void;
   reject: (error: unknown) => void;
   timer: NodeJS.Timeout;
+  /** The BiDi method behind this request; stamped into every failure. */
+  method: string;
 }
 
 /** Firefox 403s the first upgrade while finishing initialization; retry. */
@@ -25,6 +27,58 @@ export interface BiDiClientOptions {
    * surface; the returned socket is treated as a WebSocket internally.
    */
   readonly openSocket?: () => Promise<BiDiSocket>;
+}
+
+/**
+ * Translate a BiDi error frame into our taxonomy (decisions §1 of the 0.2.0
+ * plan). Only unambiguous flat codes map; everything unknown stays
+ * SESSION_FAILED with the raw code preserved in details.biDiCode. Codes are
+ * additive for 0.1.x clients.
+ */
+export function translateBiDiError(
+  biDiCode: string | undefined,
+  errorMessage: string | undefined
+): ActionableErrorCode {
+  if (
+    biDiCode === 'session not created' ||
+    (errorMessage !== undefined &&
+      /maximum number (of )?active sessions/i.test(errorMessage))
+  ) {
+    return 'SESSION_BUSY';
+  }
+  switch (biDiCode) {
+    case 'no such frame':
+      return 'FRAME_NOT_FOUND';
+    case 'no such element':
+    case 'no such node':
+    case 'detached shadow root':
+      return 'STALE_UID';
+    case 'unknown command':
+    case 'unsupported operation':
+      return 'UNSUPPORTED';
+    case 'no such request':
+      return 'NETWORK_ERROR';
+    case 'move target out of bounds':
+    case 'element not interactable':
+      return 'NOT_INTERACTABLE';
+    case 'invalid argument':
+    case 'invalid selector':
+      return 'INVALID_ARGUMENT';
+    default:
+      return 'SESSION_FAILED';
+  }
+}
+
+/** The raw BiDi code plus the request's method, for agent diagnostics. */
+function failureDetails(
+  method: string,
+  biDiCode: string | undefined
+): Record<string, unknown> {
+  const details: Record<string, unknown> = { method };
+  if (biDiCode !== undefined) {
+    details.biDiCode = biDiCode;
+  }
+  return details;
 }
 
 /**
@@ -267,13 +321,15 @@ export class BiDiClient {
       if (pending !== undefined) {
         this.#pending.delete(id);
         pending.reject(
-          new ActionableError('TIMEOUT', `Timed out waiting for ${method}.`)
+          new ActionableError('TIMEOUT', `Timed out waiting for ${method}.`, {
+            details: failureDetails(method, undefined),
+          })
         );
       }
     }, this.#timeoutMs);
 
     return new Promise<Record<string, unknown>>((resolve, reject) => {
-      this.#pending.set(id, { resolve, reject, timer });
+      this.#pending.set(id, { resolve, reject, timer, method });
       socket.send(JSON.stringify(message));
     });
   }
@@ -352,27 +408,30 @@ export class BiDiClient {
           : undefined;
     // Real Firefox/Zen reports the one-session conflict as
     // `session not created` / "Maximum number of active sessions".
-    const isBusy =
-      biDiCode === 'session not created' ||
-      (errorMessage !== undefined &&
-        /maximum number (of )?active sessions/i.test(errorMessage));
-    const code = isBusy ? 'SESSION_BUSY' : 'SESSION_FAILED';
+    const code = translateBiDiError(biDiCode, errorMessage);
 
     pending.reject(
       new ActionableError(
         code,
         errorMessage ??
           `Malformed BiDi error frame for request ${String(message.id)}.`,
-        { details: biDiCode === undefined ? undefined : { biDiCode } }
+        { details: failureDetails(pending.method, biDiCode) }
       )
     );
   }
 
-  #failPending(code: 'CONNECTION_CLOSED' | 'CONNECTION_FAILED', message: string): void {
+  #failPending(
+    code: 'CONNECTION_CLOSED' | 'CONNECTION_FAILED',
+    message: string
+  ): void {
     this.#fireClose();
     for (const pending of this.#pending.values()) {
       clearTimeout(pending.timer);
-      pending.reject(new ActionableError(code, message));
+      pending.reject(
+        new ActionableError(code, message, {
+          details: failureDetails(pending.method, undefined),
+        })
+      );
     }
     this.#pending.clear();
   }
