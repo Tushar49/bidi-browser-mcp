@@ -1,8 +1,13 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BiDiClient } from '../../connection/bidi-client.js';
-import { nodeSupportsMapper } from '../../connection/chromium-mapper.js';
+import {
+  isModuleNotFound,
+  MapperSocket,
+  nodeSupportsMapper,
+} from '../../connection/chromium-mapper.js';
 import type { BiDiSocket } from '../../connection/chromium-mapper.js';
+import { normalizeChromiumCapabilities } from '../../session/session-manager.js';
 
 /**
  * Stand-in for the mapper facade: same shape the Chromium path returns,
@@ -147,5 +152,82 @@ describe('nodeSupportsMapper', () => {
     expect(nodeSupportsMapper('22.5.0')).toBe(false);
     expect(nodeSupportsMapper('22.12.0')).toBe(true);
     expect(nodeSupportsMapper('24.1.0')).toBe(true);
+  });
+});
+
+describe('normalizeChromiumCapabilities', () => {
+  it('turns the CDP product string into BiDi fields', () => {
+    expect(
+      normalizeChromiumCapabilities({
+        browserName: 'Chrome/153.0.8010.53',
+        browserVersion: '@b3959b7',
+        platformName: '',
+        webSocketUrl: '',
+        acceptInsecureCerts: false,
+      })
+    ).toEqual({
+      browserName: 'chrome',
+      browserVersion: '153.0.8010.53',
+      acceptInsecureCerts: false,
+    });
+  });
+
+  it('drops a bare revision but keeps a real browser version', () => {
+    expect(normalizeChromiumCapabilities({ browserVersion: '@b3959b7' })).toEqual(
+      {}
+    );
+    expect(
+      normalizeChromiumCapabilities({
+        browserName: 'firefox',
+        browserVersion: '142.0',
+      })
+    ).toEqual({ browserName: 'firefox', browserVersion: '142.0' });
+  });
+});
+
+describe('isModuleNotFound', () => {
+  it('only claims resolution failures', () => {
+    expect(
+      isModuleNotFound(
+        Object.assign(new Error('x'), { code: 'ERR_MODULE_NOT_FOUND' })
+      )
+    ).toBe(true);
+    expect(
+      isModuleNotFound(Object.assign(new Error('x'), { code: 'MODULE_NOT_FOUND' }))
+    ).toBe(true);
+    expect(isModuleNotFound(new Error('Cannot find package chromium-bidi'))).toBe(
+      true
+    );
+    expect(isModuleNotFound(new Error('broken export'))).toBe(false);
+    expect(isModuleNotFound(undefined)).toBe(false);
+  });
+});
+
+describe('MapperSocket startup buffering', () => {
+  it('buffers mapper messages until open, then flushes in order', async () => {
+    const socket = new MapperSocket();
+    const messages: unknown[] = [];
+    socket.on('message', (message) => messages.push(JSON.parse(String(message))));
+    socket.pushMessage({ type: 'event', method: 'a' });
+    socket.pushMessage({ type: 'event', method: 'b' });
+    expect(messages).toEqual([]);
+
+    socket.attach(() => {});
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(messages).toEqual([
+      { type: 'event', method: 'a' },
+      { type: 'event', method: 'b' },
+    ]);
+  });
+
+  it('drops the buffer when it closes before open', async () => {
+    const socket = new MapperSocket();
+    const messages: unknown[] = [];
+    socket.on('message', (message) => messages.push(message));
+    socket.pushMessage({ type: 'event' });
+    socket.terminate();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(messages).toEqual([]);
+    expect(socket.readyState).toBe(socket.CLOSED);
   });
 });

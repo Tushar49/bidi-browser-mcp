@@ -52,8 +52,8 @@ are empty strings.
   `chromium-bidi/out/Default/gen/src/cdp/CdpConnection.js`. That path is a build
   artifact and may move between versions — hence the exact pin. A failed import
   surfaces as `MISSING_DEPENDENCY` with the install command, never a crash.
-  `pnpm verify:release` fails if the pin in the code and the pin in
-  `package.json` drift apart.
+  `pnpm verify:release` fails if the pin in the code, `package.json`, or the
+  docs drift apart.
 - Being optional means npm/pnpm normally install it, but two setups skip it:
   `--omit=optional` (common in CI/Docker slims) and `engine-strict` with a Node
   version outside the mapper's own range (`>=20.19.0 <22.0.0 || >=22.12.0`;
@@ -81,7 +81,16 @@ are empty strings.
   Chromium sessions.
 - Chromium ports are never probed as BiDi `/session` endpoints: they answer
   403, and a fake candidate would burn the handshake retries (or fail
-  discovery on a Chromium-only machine).
+  discovery on a Chromium-only machine). Ports found through
+  `DevToolsActivePort` scans and process inspection are excluded from the
+  probe list alike. The exclusion does not check liveness, so a stale profile's
+  recorded port is skipped even if a browser listens there (Firefox normally
+  arrives through `WebDriverBiDiServer.json` first).
+- The connect timeout is **per candidate attempt** (`BIDI_TIMEOUT` each), not
+  one global window; with several stale candidates the total wait grows.
+- At most 500 mapper messages are buffered before `open`; overflow drops the
+  newest messages (the buffer is bounded on purpose, startup completeness
+  second).
 - Firefox endpoints are preferred when both families are discovered; set
   `BIDI_WS_URL` to force a specific browser.
 

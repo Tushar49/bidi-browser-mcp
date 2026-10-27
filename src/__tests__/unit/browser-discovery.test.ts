@@ -147,6 +147,16 @@ describe('chromiumEndpointFromDataDir', () => {
     );
   });
 
+  it('excludes a dir-scanned Chromium port from BiDi port probes', async () => {
+    const dir = dataDirWith('9444\n/devtools/browser/abc\n');
+    const candidates = await discoverBrowsers(
+      loadConfig({ BIDI_CHROMIUM_DATA_DIR: dir, BIDI_PORT: '9444' })
+    );
+    expect(candidates.map((candidate) => candidate.endpoint)).not.toContain(
+      'ws://127.0.0.1:9444/session'
+    );
+  });
+
   it('marks BIDI_WS_URL DevTools endpoints as chromium', async () => {
     const candidates = await discoverBrowsers(
       loadConfig({ BIDI_WS_URL: 'ws://127.0.0.1:9222/devtools/browser/xyz' })
@@ -167,5 +177,18 @@ describe('extractUserDataDir', () => {
       '/tmp/chrome-profile'
     );
     expect(extractUserDataDir('chrome --remote-debugging-port=9222')).toBeUndefined();
+  });
+
+  it('parses the space-separated form used by launchers', () => {
+    expect(
+      extractUserDataDir('brave.exe --user-data-dir "C:/Users/me/App Data/brave"')
+    ).toBe('C:/Users/me/App Data/brave');
+    expect(
+      extractUserDataDir('brave.exe --user-data-dir C:/Users/me/brave')
+    ).toBe('C:/Users/me/brave');
+    expect(
+      extractUserDataDir('chrome --user-data-dir --remote-debugging-port=9222')
+    ).toBeUndefined();
+    expect(extractUserDataDir('chrome --user-data-dir=')).toBeUndefined();
   });
 });

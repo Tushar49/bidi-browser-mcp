@@ -31,7 +31,7 @@ const LAST_SESSION_FILE = 'last-bidi-session.json';
  * string ("Chrome/153.0.8010.53"), `browserVersion` is the CDP revision, and
  * unused fields are empty strings. Normalize to the BiDi shape tools expect.
  */
-function normalizeChromiumCapabilities(
+export function normalizeChromiumCapabilities(
   capabilities: Record<string, unknown>
 ): Record<string, unknown> {
   const normalized: Record<string, unknown> = { ...capabilities };

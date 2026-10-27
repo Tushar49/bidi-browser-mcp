@@ -99,7 +99,7 @@ function mapperInstallFix(): string {
   return parts.join(' ');
 }
 
-function isModuleNotFound(error: unknown): boolean {
+export function isModuleNotFound(error: unknown): boolean {
   const code = (error as { code?: unknown } | null)?.code;
   if (code === 'ERR_MODULE_NOT_FOUND' || code === 'MODULE_NOT_FOUND') {
     return true;
@@ -173,7 +173,7 @@ const CLOSED = 3;
  * reply is re-emitted as a 'message' event, and the CDP side dropping is
  * surfaced as a socket close.
  */
-class MapperSocket extends EventEmitter implements BiDiSocket {
+export class MapperSocket extends EventEmitter implements BiDiSocket {
   readonly CLOSED = CLOSED;
   readyState = CONNECTING;
 
@@ -398,6 +398,9 @@ export async function openChromiumMapperSocket(
     bidiServer.close();
     cdpConnection.close();
     cdpSocket.removeAllListeners();
+    // ws emits a handshake-abort 'error' after terminate; keep a listener on
+    // the teardown path or that event would crash the process.
+    cdpSocket.on('error', () => {});
     try {
       cdpSocket.terminate();
     } catch {

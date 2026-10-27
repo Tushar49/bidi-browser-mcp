@@ -24,6 +24,13 @@ if (mapperPin === undefined) {
   errors.push(
     `package.json optionalDependencies.chromium-bidi "${pkg.optionalDependencies?.['chromium-bidi']}" != mapper pin "${mapperPin}"`
   );
+} else {
+  for (const file of ['README.md', 'docs/chromium-mapper.md']) {
+    const text = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
+    if (!text.includes(mapperPin)) {
+      errors.push(`${file} does not mention the chromium-bidi pin "${mapperPin}"`);
+    }
+  }
 }
 
 if (!pkg.mcpName) {

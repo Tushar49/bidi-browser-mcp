@@ -55,12 +55,12 @@ export function extractRemoteDebuggingPort(commandLine: string): number | undefi
  * file in that directory, so this is how Chromium is found without config.
  */
 export function extractUserDataDir(commandLine: string): string | undefined {
-  const quoted = /--user-data-dir="([^"]+)"/.exec(commandLine);
-  if (quoted?.[1] !== undefined && quoted[1] !== '') {
-    return quoted[1];
-  }
-  const plain = /--user-data-dir=(\S+)/.exec(commandLine);
-  return plain?.[1];
+  // Accepts --user-data-dir="…", --user-data-dir=…, and --user-data-dir "…".
+  // An unquoted path with spaces is not recoverable; \S+ keeps the first token.
+  const match = /--user-data-dir(?:=|\s+)("([^"]+)"|((?!--)\S+))/.exec(
+    commandLine
+  );
+  return match?.[2] ?? match?.[3];
 }
 
 function isChromiumProcess(name: string): boolean {
@@ -343,6 +343,13 @@ async function processCommandLines(): Promise<readonly ProcessInfo[]> {
   }
 }
 
+function addChromiumPort(ports: Set<number>, endpoint: string): void {
+  const port = Number(new URL(endpoint).port);
+  if (Number.isInteger(port) && port > 0) {
+    ports.add(port);
+  }
+}
+
 async function processCandidates(): Promise<{
   readonly candidates: readonly DiscoveryCandidate[];
   readonly chromiumPorts: ReadonlySet<number>;
@@ -366,10 +373,7 @@ async function processCandidates(): Promise<{
       if (endpoint === undefined) {
         continue;
       }
-      const endpointPort = Number(new URL(endpoint).port);
-      if (Number.isInteger(endpointPort) && endpointPort > 0) {
-        chromiumPorts.add(endpointPort);
-      }
+      addChromiumPort(chromiumPorts, endpoint);
       addCandidate(candidates, {
         endpoint,
         source: 'chromium-devtools-port',
@@ -471,9 +475,12 @@ export async function discoverBrowsers(config: Config): Promise<
     }
   }
 
+  const chromiumPorts = new Set<number>();
+
   for (const dir of chromiumDataDirs(config)) {
     const endpoint = chromiumEndpointFromDataDir(dir);
     if (endpoint !== undefined) {
+      addChromiumPort(chromiumPorts, endpoint);
       addEndpoint(endpoint, 'chromium-devtools-port', {
         profilePath: dir,
         browserFamily: 'chromium',
@@ -481,9 +488,13 @@ export async function discoverBrowsers(config: Config): Promise<
     }
   }
 
-  const { candidates: processFound, chromiumPorts } = await processCandidates();
+  const { candidates: processFound, chromiumPorts: processPorts } =
+    await processCandidates();
   for (const candidate of processFound) {
     addEndpoint(candidate.endpoint, candidate.source, candidate);
+  }
+  for (const port of processPorts) {
+    chromiumPorts.add(port);
   }
 
   for (const candidate of portCandidates(config, chromiumPorts)) {

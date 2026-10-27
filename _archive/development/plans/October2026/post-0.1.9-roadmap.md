@@ -27,8 +27,9 @@ is our tool layer, not the browser.
   refuse Node 22.0–22.11 installs for Firefox-only users, which is the wrong
   trade. Chromium's narrower range is explained at runtime instead.
 - `chromium-bidi` stays an exact-pinned `optionalDependency`; the failure path
-  names the pin, the same-prefix install, `--omit=optional`, and the Node range
-  when relevant. No `postinstall` warning (breaks under `--ignore-scripts`).
+  names the pin, the manager-specific recovery (npm sibling install vs pnpm
+  isolation), `--omit=optional`, and the Node range when relevant. No
+  `postinstall` warning (breaks under `--ignore-scripts`).
 - `pnpm verify:release` fails when the code pin and
   `optionalDependencies.chromium-bidi` drift. Clean `npm pack` → `npm i` →
   deep-import load is part of release verification. pnpm was verified too:
@@ -37,6 +38,32 @@ is our tool layer, not the browser.
   virtual store), so pnpm recovery is "reinstall the server" or `pnpm dlx`.
 - Rejected: making `chromium-bidi` a hard dependency (Firefox installs would
   pay ~30 MB for a feature they do not use).
+
+### Deep-review follow-ups closed before the tag
+
+- Dir-scan `DevToolsActivePort` ports join the exclusion set used by BiDi port
+  probes, so a Chromium-only machine cannot surface a 403 `/session` candidate.
+- Mapper teardown re-attaches a no-op `error` listener after
+  `removeAllListeners()`; an async handshake-abort cannot crash the process.
+- `extractUserDataDir` handles the space-separated argv form (`--user-data-dir
+  "C:/…"`) and rejects a flag-shaped value (`--user-data-dir --flag`).
+- Unit coverage added for `normalizeChromiumCapabilities`, `isModuleNotFound`,
+  `MapperSocket` startup buffering/close, and dir-scan port exclusion.
+- `verify:release` also checks the pin appears in README and the mapper doc.
+
+### Deferred to 0.2.0 (review leftovers, non-blocking)
+
+- **Startup buffer overflow signal.** `MapperSocket` caps pending mapper
+  messages at 500 and silently drops the newest past that. Surface a bounded
+  warning (or count) instead of staying silent; the cap stays.
+- **Process-name matching.** Discovery matches known browser names as
+  substrings, so `frozen.exe`/`citizen.exe` can match `zen`. Tighten to
+  basename equality on Windows and argv[0] basename matching on POSIX.
+- **Stale `DevToolsActivePort` suppression.** A dead Chromium profile's port is
+  excluded from BiDi probing even if a Firefox actually listens there. Harden
+  by cheaply confirming CDP (version endpoint/WS handshake) before excluding.
+- **Unused `MapperSocket` export.** Exported for unit tests; it is not reachable
+  through the package exports map. Keep it internal or document it as test-only.
 
 ## Wave 0 — foundations (before any new tool)
 
