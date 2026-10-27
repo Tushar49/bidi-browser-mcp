@@ -1,6 +1,6 @@
 {
   "name": "bidi-browser-mcp",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "WebDriver BiDi browser MCP server — control your real Firefox (native BiDi) or Chromium browser (in-process mapper) over the W3C standard protocol",
   "mcpName": "io.github.tushar49/bidi-browser-mcp",
   "type": "module",
@@ -21,7 +21,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Tushar49/bidi-browser-mcp.git"
+    "url": "git+https://github.com/Tushar49/bidi-browser-mcp.git"
   },
   "homepage": "https://github.com/Tushar49/bidi-browser-mcp#readme",
   "bugs": {
