@@ -2,6 +2,52 @@
 
 All notable changes to BiDi Browser MCP Server will be documented in this file.
 
+## [0.1.9] - 2026-10-27
+
+### Added
+- **Chromium support without chromedriver.** When a Chromium endpoint is
+  discovered, the `chromium-bidi` mapper is started inside this server process
+  and given a CDP connection; the tool layer keeps speaking WebDriver BiDi.
+  Verified against Brave 153: `browsingContext.getTree` lists live tabs and
+  `script.evaluate` runs in them. `chromium-bidi` is an optional dependency —
+  without it, Chromium sessions fail with `MISSING_DEPENDENCY` and the exact
+  install command.
+- Chromium discovery reads `DevToolsActivePort` (port + browser WebSocket
+  path) from the standard Chrome, Brave, Edge, Chromium, and Vivaldi user-data
+  directories, and from the `--user-data-dir` of a running Chromium process —
+  portable launchers that hide the port flag are found with no configuration.
+  `BIDI_CHROMIUM_DATA_DIR` still adds directories explicitly, and a
+  `BIDI_WS_URL` pointing at `/devtools/browser/…` is treated as Chromium.
+  Chromium ports are no longer probed as BiDi `/session` endpoints (they always
+  answer 403), so a Chromium-only machine no longer fails discovery.
+- The snapshot traversal caps interactive elements at 5000 and reports the
+  dropped count through snapshot metadata instead of serializing an unbounded
+  element list.
+- `BIDI_LOCAL_APP_DATA_ROOT` config knob so discovery stays the only module
+  that reads environment variables.
+- The connect timeout on the Chromium path explains the in-browser debugging
+  permission dialog, which Chromium requires once per connection.
+
+### Changed
+- `BiDiClient` accepts a custom socket opener (`openSocket`), letting the
+  mapper facade plug in without changing the tool layer. A generation guard
+  stops a late socket open from reviving an abandoned connect attempt, and a
+  socket that dies right after opening can no longer be reported as connected.
+- Connect failures mention both browser families and their launch flags.
+- Chromium capabilities are normalized before tools see them: the mapper's
+  product string becomes `browserName`/`browserVersion`, and empty placeholder
+  fields are dropped.
+- Mapper messages emitted while the mapper starts are buffered and replayed
+  after the session opens, so context events are not lost.
+
+### Fixed
+- The connect timeout is no longer cancelled as soon as a socket is created;
+  a socket that never opens now fails at `BIDI_TIMEOUT` instead of hanging.
+- Crash-recovery reattaches only to endpoints discovery would allow: a tampered
+  persisted session file can no longer redirect the server to a remote host.
+- A missing `chromium-bidi` install and a broken one now produce different
+  errors; the version pin is named in both fixes.
+
 ## [0.1.8] - 2026-10-25
 
 ### Added

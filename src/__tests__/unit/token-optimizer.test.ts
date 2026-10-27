@@ -60,3 +60,15 @@ describe('fitToBudget', () => {
     expect(fitted.meta.truncated).toBe(true);
   });
 });
+
+describe('fitToBudget with DOM-capped elements', () => {
+  it('surfaces elements dropped before serialization', () => {
+    const capped: PageSnapshot = {
+      ...snapshot(2, 'text'),
+      droppedElements: 500,
+    };
+    const fitted = fitToBudget(capped, 100_000, { includeText: true });
+    expect(fitted.meta.truncated).toBe(true);
+    expect(fitted.meta.omittedElements).toBe(500);
+  });
+});

@@ -1,7 +1,7 @@
 {
   "name": "bidi-browser-mcp",
-  "version": "0.1.8",
-  "description": "WebDriver BiDi browser MCP server — control your real Firefox over the W3C standard protocol",
+  "version": "0.1.9",
+  "description": "WebDriver BiDi browser MCP server — control your real Firefox (native BiDi) or Chromium browser (in-process mapper) over the W3C standard protocol",
   "mcpName": "io.github.tushar49/bidi-browser-mcp",
   "type": "module",
   "main": "dist/index.js",
@@ -43,7 +43,10 @@
     "browser-automation",
     "model-context-protocol",
     "ai-agent",
-    "browser-mcp"
+    "browser-mcp",
+    "chromium",
+    "chrome",
+    "brave"
   ],
   "engines": {
     "node": ">=20.19"
@@ -76,5 +79,8 @@
     "@types/ws": "^8.18.1",
     "typescript": "^5.9.3",
     "vitest": "^2.1.9"
+  },
+  "optionalDependencies": {
+    "chromium-bidi": "158.0.8123-0"
   }
 }

@@ -16,10 +16,14 @@ export interface Config {
   readonly maxInlineLen: number;
   readonly tempDir: string;
   readonly appDataRoot: string;
+  /** Local app-data root (Chromium data dirs live here on Windows). */
+  readonly localAppDataRoot: string;
   readonly allowExtensionInstall: boolean;
   readonly allowBrowserClose: boolean;
   readonly allowRemote: boolean;
   readonly discoveryRoots: readonly string[];
+  /** Chromium user-data dirs to look for a `DevToolsActivePort` file in. */
+  readonly chromiumDataDirs: readonly string[];
 }
 
 export interface ServerContext {
@@ -79,6 +83,7 @@ export type ActionableErrorCode =
   | 'NAVIGATION_FAILED'
   | 'SCRIPT_ERROR'
   | 'UNSUPPORTED'
+  | 'MISSING_DEPENDENCY'
   | 'NETWORK_ERROR'
   | 'EXTENSION_ERROR'
   | 'INTERNAL_ERROR';
@@ -134,13 +139,22 @@ export type DiscoverySource =
   | 'profile-file'
   | 'profiles-ini'
   | 'process-cmdline'
-  | 'port-probe';
+  | 'port-probe'
+  | 'chromium-devtools-port';
+
+/**
+ * How the endpoint must be spoken to. Firefox-family browsers serve WebDriver
+ * BiDi natively; Chromium serves CDP only, so the chromium-bidi mapper is
+ * hosted in this process and translates.
+ */
+export type BrowserFamily = 'firefox' | 'chromium';
 
 export interface DiscoveryCandidate {
   readonly endpoint: string;
   readonly source: DiscoverySource;
   readonly profilePath?: string;
   readonly processId?: number;
+  readonly browserFamily?: BrowserFamily;
 }
 
 export interface BrowserCapabilities {
@@ -307,6 +321,8 @@ export interface PageSnapshot {
   readonly title: string;
   readonly text: string;
   readonly elements: readonly ElementInfo[];
+  /** Interactive elements the DOM cap dropped before serialization. */
+  readonly droppedElements?: number;
   readonly builtAt: number;
 }
 

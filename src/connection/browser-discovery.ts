@@ -17,6 +17,23 @@ const FIREFOX_FAMILY_PROCESSES = [
   'floorp',
 ] as const;
 
+/** Chromium-family binaries. They expose CDP, never a BiDi `/session` path. */
+const CHROMIUM_FAMILY_PROCESSES = [
+  'chrome',
+  'chromium',
+  'brave',
+  'msedge',
+  'vivaldi',
+  'thorium',
+  'yandex',
+  'opera',
+] as const;
+
+const KNOWN_PROCESSES = [
+  ...FIREFOX_FAMILY_PROCESSES,
+  ...CHROMIUM_FAMILY_PROCESSES,
+] as const;
+
 /**
  * Parse `--remote-debugging-port` from a process command line.
  * Supports `--remote-debugging-port`, `--remote-debugging-port 9223`, and
@@ -30,6 +47,27 @@ export function extractRemoteDebuggingPort(commandLine: string): number | undefi
   }
 
   return /--remote-debugging-port(?:\s|$)/.test(commandLine) ? 9222 : undefined;
+}
+
+/**
+ * Parse `--user-data-dir` from a Chromium command line. Portable installs (and
+ * custom profiles) only expose their CDP URL through the DevToolsActivePort
+ * file in that directory, so this is how Chromium is found without config.
+ */
+export function extractUserDataDir(commandLine: string): string | undefined {
+  const quoted = /--user-data-dir="([^"]+)"/.exec(commandLine);
+  if (quoted?.[1] !== undefined && quoted[1] !== '') {
+    return quoted[1];
+  }
+  const plain = /--user-data-dir=(\S+)/.exec(commandLine);
+  return plain?.[1];
+}
+
+function isChromiumProcess(name: string): boolean {
+  const base = name.toLowerCase().replace(/\.exe$/, '');
+  return CHROMIUM_FAMILY_PROCESSES.some(
+    (candidate) => base === candidate || base.includes(candidate)
+  );
 }
 
 function profileRoots(config: Config): string[] {
@@ -151,11 +189,83 @@ function discoveryUrlFor(profileDir: string): string | undefined {
 }
 
 /**
+ * Chromium-family user-data directories that write a `DevToolsActivePort`
+ * file (port + browser WebSocket path) when started with
+ * `--remote-debugging-port`. Extra dirs come from BIDI_CHROMIUM_DATA_DIR.
+ */
+function chromiumDataDirs(config: Config): string[] {
+  const home = homedir();
+  const dirs: string[] = [...config.chromiumDataDirs];
+
+  if (platform() === 'win32') {
+    const local = config.localAppDataRoot;
+    dirs.push(
+      join(local, 'Google', 'Chrome', 'User Data'),
+      join(local, 'BraveSoftware', 'Brave-Browser', 'User Data'),
+      join(local, 'Microsoft', 'Edge', 'User Data'),
+      join(local, 'Chromium', 'User Data'),
+      join(local, 'Vivaldi', 'User Data')
+    );
+  } else if (platform() === 'darwin') {
+    const base = join(home, 'Library', 'Application Support');
+    dirs.push(
+      join(base, 'Google', 'Chrome'),
+      join(base, 'BraveSoftware', 'Brave-Browser'),
+      join(base, 'Microsoft Edge'),
+      join(base, 'Chromium'),
+      join(base, 'Vivaldi')
+    );
+  } else {
+    const base = join(home, '.config');
+    dirs.push(
+      join(base, 'google-chrome'),
+      join(base, 'BraveSoftware', 'Brave-Browser'),
+      join(base, 'microsoft-edge'),
+      join(base, 'chromium'),
+      join(base, 'vivaldi')
+    );
+  }
+
+  return [...new Set(dirs.map((dir) => resolve(dir)))].filter((dir) =>
+    existsSync(dir)
+  );
+}
+
+/**
+ * Read `DevToolsActivePort`: first line is the port, second is the browser
+ * WebSocket path (`/devtools/browser/<id>`). Returns a CDP endpoint the mapper
+ * can attach to; the browser must already be running.
+ */
+export function chromiumEndpointFromDataDir(
+  dataDir: string
+): string | undefined {
+  const file = join(dataDir, 'DevToolsActivePort');
+  if (!existsSync(file)) {
+    return undefined;
+  }
+
+  try {
+    const [portLine, pathLine] = readFileSync(file, 'utf8').split(/\r?\n/);
+    const port = Number((portLine ?? '').trim());
+    const wsPath = (pathLine ?? '').trim();
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      return undefined;
+    }
+    if (!wsPath.startsWith('/devtools/browser/')) {
+      return undefined;
+    }
+    return `ws://127.0.0.1:${port}${wsPath}`;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Gate every discovered candidate against BIDI_ALLOW_REMOTE, not just the
  * explicit BIDI_WS_URL case. Profile files are user-writable data — a tampered
  * or rogue WebDriverBiDiServer.json must not point the server at a remote host.
  */
-function endpointAllowed(config: Config, endpoint: string): boolean {
+export function endpointAllowed(config: Config, endpoint: string): boolean {
   return config.allowRemote || isLoopback(endpoint);
 }
 
@@ -177,12 +287,16 @@ function addCandidate(
   }
 }
 
-async function processCommandLines(): Promise<
-  readonly { processId: number; commandLine: string }[]
-> {
+interface ProcessInfo {
+  readonly processId: number;
+  readonly name: string;
+  readonly commandLine: string;
+}
+
+async function processCommandLines(): Promise<readonly ProcessInfo[]> {
   try {
     if (platform() === 'win32') {
-      const script = `Get-CimInstance Win32_Process | Where-Object { $_.Name -match '${FIREFOX_FAMILY_PROCESSES.join('|')}' } | Select-Object ProcessId,Name,CommandLine | ConvertTo-Json -Compress`;
+      const script = `Get-CimInstance Win32_Process | Where-Object { $_.Name -match '${KNOWN_PROCESSES.join('|')}' } | Select-Object ProcessId,Name,CommandLine | ConvertTo-Json -Compress`;
       const { stdout } = await execFileAsync(
         'powershell.exe',
         ['-NoProfile', '-Command', script],
@@ -190,14 +304,18 @@ async function processCommandLines(): Promise<
       );
 
       const parsed = JSON.parse(stdout) as
-        | { ProcessId?: number; CommandLine?: string }
-        | Array<{ ProcessId?: number; CommandLine?: string }>;
+        | { ProcessId?: number; Name?: string; CommandLine?: string }
+        | Array<{ ProcessId?: number; Name?: string; CommandLine?: string }>;
       const normalized = Array.isArray(parsed) ? parsed : [parsed];
 
       return normalized
-        .filter((item) => typeof item.CommandLine === 'string')
+        .filter(
+          (item) =>
+            typeof item.CommandLine === 'string' && typeof item.Name === 'string'
+        )
         .map((item) => ({
           processId: typeof item.ProcessId === 'number' ? item.ProcessId : 0,
+          name: item.Name as string,
           commandLine: item.CommandLine as string,
         }));
     }
@@ -211,23 +329,57 @@ async function processCommandLines(): Promise<
       .split(/\r?\n/)
       .map((line) => /^\s*(\d+)\s+(.*)$/.exec(line.trim()))
       .filter((match): match is RegExpExecArray => match !== null)
-      .filter((match) =>
-        FIREFOX_FAMILY_PROCESSES.some((name) => match[2].includes(name))
-      )
-      .map((match) => ({
-        processId: Number(match[1]),
-        commandLine: match[2],
-      }));
+      .flatMap((match) => {
+        const commandLine = match[2];
+        const name = KNOWN_PROCESSES.find((candidate) =>
+          commandLine.toLowerCase().includes(candidate)
+        );
+        return name === undefined
+          ? []
+          : [{ processId: Number(match[1]), name, commandLine }];
+      });
   } catch {
     return [];
   }
 }
 
-async function processCandidates(): Promise<readonly DiscoveryCandidate[]> {
+async function processCandidates(): Promise<{
+  readonly candidates: readonly DiscoveryCandidate[];
+  readonly chromiumPorts: ReadonlySet<number>;
+}> {
   const processes = await processCommandLines();
   const candidates: DiscoveryCandidate[] = [];
+  const chromiumPorts = new Set<number>();
+  const seenDataDirs = new Set<string>();
 
   for (const item of processes) {
+    if (isChromiumProcess(item.name)) {
+      // Chromium answers `/session` with 403; the usable attach point is the
+      // CDP browser WebSocket recorded in its DevToolsActivePort file. Portable
+      // launchers often hide the port flag, so key on --user-data-dir instead.
+      const dataDir = extractUserDataDir(item.commandLine);
+      if (dataDir === undefined || seenDataDirs.has(dataDir)) {
+        continue;
+      }
+      seenDataDirs.add(dataDir);
+      const endpoint = chromiumEndpointFromDataDir(dataDir);
+      if (endpoint === undefined) {
+        continue;
+      }
+      const endpointPort = Number(new URL(endpoint).port);
+      if (Number.isInteger(endpointPort) && endpointPort > 0) {
+        chromiumPorts.add(endpointPort);
+      }
+      addCandidate(candidates, {
+        endpoint,
+        source: 'chromium-devtools-port',
+        processId: item.processId,
+        profilePath: dataDir,
+        browserFamily: 'chromium',
+      });
+      continue;
+    }
+
     const port = extractRemoteDebuggingPort(item.commandLine);
     if (port === undefined) {
       continue;
@@ -240,11 +392,16 @@ async function processCandidates(): Promise<readonly DiscoveryCandidate[]> {
     });
   }
 
-  return candidates;
+  return { candidates, chromiumPorts };
 }
 
-function portCandidates(config: Config): readonly DiscoveryCandidate[] {
-  const ports = [...new Set([config.port, 9222, 9223])];
+function portCandidates(
+  config: Config,
+  chromiumPorts: ReadonlySet<number>
+): readonly DiscoveryCandidate[] {
+  const ports = [...new Set([config.port, 9222, 9223])].filter(
+    (port) => !chromiumPorts.has(port)
+  );
   return ports.map((port) => ({
     endpoint: `ws://127.0.0.1:${port}/session`,
     source: 'port-probe' as DiscoverySource,
@@ -287,6 +444,11 @@ export async function discoverBrowsers(config: Config): Promise<
     addCandidate(candidates, {
       endpoint: config.wsUrl,
       source: 'env',
+      // A DevTools browser WebSocket URL means Chromium: it speaks CDP, so
+      // the session layer must start the in-process mapper.
+      ...(/\/devtools\/browser\//.test(config.wsUrl)
+        ? { browserFamily: 'chromium' as const }
+        : {}),
     });
     return candidates;
   }
@@ -309,11 +471,22 @@ export async function discoverBrowsers(config: Config): Promise<
     }
   }
 
-  for (const candidate of await processCandidates()) {
+  for (const dir of chromiumDataDirs(config)) {
+    const endpoint = chromiumEndpointFromDataDir(dir);
+    if (endpoint !== undefined) {
+      addEndpoint(endpoint, 'chromium-devtools-port', {
+        profilePath: dir,
+        browserFamily: 'chromium',
+      });
+    }
+  }
+
+  const { candidates: processFound, chromiumPorts } = await processCandidates();
+  for (const candidate of processFound) {
     addEndpoint(candidate.endpoint, candidate.source, candidate);
   }
 
-  for (const candidate of portCandidates(config)) {
+  for (const candidate of portCandidates(config, chromiumPorts)) {
     addEndpoint(candidate.endpoint, candidate.source, candidate);
   }
 

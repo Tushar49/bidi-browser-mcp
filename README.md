@@ -17,12 +17,12 @@
 
 ## Status
 
-v0.1.8 hardening + Chromium path. The stdio MCP server boots and exposes
-`ping`, `browser`, `tabs`, `page` (snapshot/content), `console`, `observe`,
-`context` (containers), `spaces` (Zen), and `cleanup`. Socket drops clear
-session state honestly and the next connect recovers; Chromium runs through
-the chromium-bidi mapper with Firefox-only tools gated. The full matrix and
-docs land in v0.1.9 — the first public npm release.
+v0.1.9 — first public npm release. The stdio MCP server exposes `ping`,
+`browser`, `tabs`, `page` (snapshot/content), `console`, `observe`, `context`
+(containers), `spaces` (Zen), and `cleanup`. Socket drops clear session state
+honestly and the next connect recovers. Chromium browsers are supported without
+chromedriver: the `chromium-bidi` mapper runs inside this server and translates
+BiDi to CDP, with Firefox-only tools gated by a clear `UNSUPPORTED` error.
 
 v1 attaches to a Firefox you start; it does not launch, profile-manage, or close
 the browser. Launch/private/incognito control is future work.
@@ -69,11 +69,12 @@ exist in every browser.
 
 ## Cross-browser roadmap
 
-v1 is Firefox-only because Firefox is the only browser that exposes a native
-BiDi endpoint we can attach to without a driver. Chrome, Edge, and Brave expose
-BiDi through ChromeDriver/EdgeDriver; Safari is experimental and partial. A
-backend seam is planned, but "one BiDi server for every browser" is not a v1
-claim.
+Firefox-family browsers expose a native BiDi endpoint; this server attaches to
+it directly. Chromium browsers (Chrome, Brave, Edge, Vivaldi, Chromium) expose
+CDP only, so this server hosts the
+[chromium-bidi mapper](https://github.com/GoogleChromeLabs/chromium-bidi)
+in-process — no chromedriver and no driver binary. Safari is experimental and
+partial, and is not supported yet.
 
 ## Requirements
 
@@ -81,21 +82,37 @@ claim.
 - Firefox 129+ for the core surface; 153 ESR recommended; 158+ for the full
   surface (debugger, profiler, screencast, newer emulation)
 - Two runtime dependencies: `ws`, `@modelcontextprotocol/sdk`
+- Optional: `chromium-bidi` for Chromium support (installed on demand)
 
 ## Chromium browsers (Chrome, Brave, Edge, …)
 
-Chromium does not speak WebDriver BiDi natively yet — `--remote-debugging-port`
-exposes CDP, which is a different protocol. The bridge is the
-[chromium-bidi mapper](https://github.com/GoogleChromeLabs/chromium-bidi):
+Chromium does not speak WebDriver BiDi natively: `--remote-debugging-port`
+exposes CDP, a different protocol. When this server discovers a Chromium
+endpoint it starts the **chromium-bidi mapper inside its own process**, hands
+it a CDP connection, and keeps speaking BiDi to the tool layer. No chromedriver,
+no extension, no browser restart.
 
 1. Launch Chromium with `--remote-debugging-port=<port>`.
-2. Run the mapper (requires chromedriver; see the repo's examples README).
-3. Point this server at the mapper: `BIDI_WS_URL=ws://127.0.0.1:<mapper-port>/session`.
+2. Approve the debugging permission dialog in the browser window when the
+   server connects (Chromium asks once per connection).
+3. Install the optional mapper: `npm install chromium-bidi` (or
+   `pnpm add chromium-bidi`). Without it, Chromium sessions fail with a
+   `MISSING_DEPENDENCY` error that names the exact install command.
+
+Discovery finds a running Chromium browser two ways: it reads
+`DevToolsActivePort` from the standard Chrome, Brave, Edge, Chromium, and
+Vivaldi user-data directories, and it resolves the `--user-data-dir` of a
+running Chromium process — so portable installs work with no configuration.
+`BIDI_CHROMIUM_DATA_DIR` adds directories explicitly (`;`-separated), and
+`BIDI_WS_URL` can name the browser's
+`ws://127.0.0.1:<port>/devtools/browser/<id>` URL. Chromium ports are never
+probed as BiDi `/session` endpoints (they always answer 403).
 
 `ping`, `browser`, `tabs`, `page`, `console`, `observe`, and `cleanup` work
 through the mapper. Firefox-family features (`context`, `spaces`) refuse with
-a clear `UNSUPPORTED` error on non-Firefox sessions, and `pnpm detect` marks
-Chromium processes `[cdp-only]`.
+a clear `UNSUPPORTED` error on non-Firefox sessions. Firefox endpoints are
+preferred when both browser families are running; set `BIDI_WS_URL` to force a
+specific browser.
 
 ## Start Firefox with BiDi
 
@@ -215,6 +232,8 @@ startup; the allow flags are reserved for later waves.
 | `BIDI_WS_URL` | auto | Override full WebSocket URL |
 | `BIDI_PROFILE_DIR` | auto | Firefox profile directory for discovery |
 | `BIDI_APP_DATA_ROOT` | `%APPDATA%` | App-data root used for profile discovery |
+| `BIDI_LOCAL_APP_DATA_ROOT` | `%LOCALAPPDATA%` | Local app-data root used to find Chromium user-data dirs |
+| `BIDI_CHROMIUM_DATA_DIR` | auto | Extra Chromium user-data dirs (one or more, `;`-separated) for `DevToolsActivePort` discovery |
 | `BIDI_TIMEOUT` | `30000` | Command timeout (ms) |
 | `BIDI_TOOLSET` | `core` | `core`, `network`, or `devtools` |
 | `BIDI_OUTPUT_MODE` | `full` | `full` (no inline cut; snapshots capped at 1 MiB) or `inline` (fit `BIDI_MAX_INLINE_LEN`); `file` is rejected |

@@ -65,9 +65,9 @@ export const spacesTool = defineTool({
         fix: 'Call browser.connect first.',
       });
     }
-    assertFirefoxFamily((await session.status()).browser?.browserName, 'Zen spaces');
-
     const status = await session.status();
+    assertFirefoxFamily(status.browser?.browserName, 'Zen spaces');
+
     const profilePath = status.browser?.['moz:profile'];
     if (typeof profilePath !== 'string' || profilePath === '') {
       throw new ActionableError(

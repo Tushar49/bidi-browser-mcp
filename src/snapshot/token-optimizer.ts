@@ -19,10 +19,12 @@ export function fitToBudget(
   options: { includeText?: boolean } = {}
 ): FittedSnapshot {
   const includeText = options.includeText === true;
+  // Elements the DOM traversal dropped before serialization (hard cap).
+  const droppedByCap = snapshot.droppedElements ?? 0;
   const meta = (): TruncationMeta => ({
-    truncated: false,
+    truncated: droppedByCap > 0,
     originalChars: 0,
-    omittedElements: 0,
+    omittedElements: droppedByCap,
     omittedTextChars: 0,
   });
 
@@ -72,7 +74,7 @@ export function fitToBudget(
       meta: {
         truncated: true,
         originalChars: original,
-        omittedElements: snapshot.elements.length - best,
+        omittedElements: snapshot.elements.length - best + droppedByCap,
         omittedTextChars: 0,
       },
     };
@@ -120,9 +122,9 @@ export function fitToBudget(
     elements: fittedElements,
     ...(text.length > 0 ? { text } : {}),
     meta: {
-      truncated: truncatedElements || omittedTextChars > 0,
+      truncated: truncatedElements || omittedTextChars > 0 || droppedByCap > 0,
       originalChars: original,
-      omittedElements: snapshot.elements.length - fittedElements.length,
+      omittedElements: snapshot.elements.length - fittedElements.length + droppedByCap,
       omittedTextChars,
     },
   };

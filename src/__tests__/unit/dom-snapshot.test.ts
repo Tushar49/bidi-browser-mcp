@@ -80,3 +80,31 @@ describe('parseSnapshotResult', () => {
     });
   });
 });
+
+describe('DOM element cap', () => {
+  it('parses and reports elements dropped by the traversal cap', () => {
+    const raw = JSON.stringify({
+      title: 'Big page',
+      url: 'https://example.test/',
+      text: '',
+      droppedElements: 1200,
+      elements: [
+        {
+          role: 'button',
+          name: 'Only',
+          tag: 'button',
+          bounds: [0, 0, 1, 1],
+          selector: '#only',
+        },
+      ],
+    });
+    const snapshot = parseSnapshotResult('ctx', raw);
+    expect(snapshot.droppedElements).toBe(1200);
+    expect(snapshot.elements).toHaveLength(1);
+  });
+
+  it('omits droppedElements when nothing was capped', () => {
+    const snapshot = parseSnapshotResult('ctx', FIXTURE);
+    expect(snapshot.droppedElements).toBeUndefined();
+  });
+});

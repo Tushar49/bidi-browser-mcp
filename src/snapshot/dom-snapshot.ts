@@ -15,6 +15,8 @@ const SNAPSHOT_SCRIPT = String.raw`
 (() => {
   const MAX_NAME = 120;
   const MAX_TEXT = 30000;
+  const MAX_ELEMENTS = 5000;
+  let dropped = 0;
 
   function esc(value) {
     return String(value == null ? '' : value);
@@ -142,6 +144,10 @@ const SNAPSHOT_SCRIPT = String.raw`
         collectFrom(el.shadowRoot, doc, out, frameChain, cssPath(el, doc));
       }
       if (!interesting(el) || !visible(el)) continue;
+      if (out.length >= MAX_ELEMENTS) {
+        dropped += 1;
+        continue;
+      }
       const role = roleOf(el);
       const rect = el.getBoundingClientRect();
       const states = statesOf(el, doc);
@@ -184,6 +190,7 @@ const SNAPSHOT_SCRIPT = String.raw`
     url: String(doc.location ? doc.location.href : ''),
     text: texts.join('\n\n--- frame ---\n\n').slice(0, MAX_TEXT),
     elements: elements,
+    droppedElements: dropped,
   });
 })()`;
 
@@ -203,6 +210,7 @@ interface RawSnapshot {
   url?: unknown;
   text?: unknown;
   elements?: unknown;
+  droppedElements?: unknown;
 }
 
 /** Assign uids and validate the raw traversal output. Pure. */
@@ -260,6 +268,9 @@ export function parseSnapshotResult(
     title: typeof parsed.title === 'string' ? parsed.title : '',
     text: typeof parsed.text === 'string' ? parsed.text : '',
     elements,
+    ...(typeof parsed.droppedElements === 'number' && parsed.droppedElements > 0
+      ? { droppedElements: parsed.droppedElements }
+      : {}),
   };
 }
 

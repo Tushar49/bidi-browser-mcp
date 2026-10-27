@@ -28,7 +28,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       join(homedir(), 'AppData', 'Roaming')
   );
   const allowRemote = readBoolean(env, 'BIDI_ALLOW_REMOTE', false);
+  const localAppDataRoot = resolve(
+    readString(env, 'BIDI_LOCAL_APP_DATA_ROOT') ??
+      readString(env, 'LOCALAPPDATA') ??
+      join(homedir(), 'AppData', 'Local')
+  );
   const discoveryRoots = readStringList(env, 'BIDI_DISCOVERY_ROOTS');
+  const chromiumDataDirs = readStringList(env, 'BIDI_CHROMIUM_DATA_DIR');
 
   if (wsUrl !== undefined) {
     validateWebSocketUrl(wsUrl);
@@ -45,10 +51,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     maxInlineLen,
     tempDir,
     appDataRoot,
+    localAppDataRoot,
     allowExtensionInstall: readBoolean(env, 'BIDI_ALLOW_EXTENSION_INSTALL', false),
     allowBrowserClose: readBoolean(env, 'BIDI_ALLOW_BROWSER_CLOSE', false),
     allowRemote,
     discoveryRoots: Object.freeze(discoveryRoots),
+    chromiumDataDirs: Object.freeze(chromiumDataDirs),
   });
 }
 

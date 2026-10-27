@@ -1,5 +1,9 @@
 import { BiDiClient } from '../connection/bidi-client.js';
-import { discoverBrowsers } from '../connection/browser-discovery.js';
+import { openChromiumMapperSocket } from '../connection/chromium-mapper.js';
+import {
+  discoverBrowsers,
+  endpointAllowed,
+} from '../connection/browser-discovery.js';
 import { EventPipeline } from '../connection/event-pipeline.js';
 import { ContextManager } from './context-manager.js';
 import { SnapshotCache } from '../snapshot/cache.js';
@@ -21,6 +25,38 @@ interface PersistedSession {
 
 /** Disk record so a later process can end a session this one left behind. */
 const LAST_SESSION_FILE = 'last-bidi-session.json';
+
+/**
+ * The mapper reports CDP-shaped capabilities: `browserName` is a product
+ * string ("Chrome/153.0.8010.53"), `browserVersion` is the CDP revision, and
+ * unused fields are empty strings. Normalize to the BiDi shape tools expect.
+ */
+function normalizeChromiumCapabilities(
+  capabilities: Record<string, unknown>
+): Record<string, unknown> {
+  const normalized: Record<string, unknown> = { ...capabilities };
+  const product =
+    typeof normalized.browserName === 'string' ? normalized.browserName : '';
+  const [name, version] = product.split('/');
+  if (name !== undefined && name !== '') {
+    normalized.browserName = name.toLowerCase();
+  }
+  if (version !== undefined && version !== '') {
+    normalized.browserVersion = version;
+  } else if (
+    typeof normalized.browserVersion === 'string' &&
+    normalized.browserVersion.startsWith('@')
+  ) {
+    // A bare CDP revision is not a browser version.
+    delete normalized.browserVersion;
+  }
+  for (const key of ['platformName', 'webSocketUrl']) {
+    if (normalized[key] === '') {
+      delete normalized[key];
+    }
+  }
+  return normalized;
+}
 
 export interface SessionManagerOptions {
   readonly config: Config;
@@ -148,9 +184,12 @@ export class SessionManager implements SessionManagerLike {
     if (candidates.length === 0) {
       throw new ActionableError(
         'DISCOVERY_FAILED',
-        'No reachable Firefox-family BiDi endpoint was found.',
+        'No reachable browser endpoint was found.',
         {
-          fix: 'Start Firefox or Zen with --remote-debugging-port, or set BIDI_WS_URL.',
+          fix:
+            'Start Firefox or Zen with --remote-debugging-port, start a Chromium browser' +
+            ' with --remote-debugging-port, or set BIDI_WS_URL (BIDI_CHROMIUM_DATA_DIR' +
+            ' for portable Chromium installs).',
         }
       );
     }
@@ -179,11 +218,13 @@ export class SessionManager implements SessionManagerLike {
 
     throw new ActionableError(
       'DISCOVERY_FAILED',
-      'No reachable Firefox-family BiDi endpoint accepted a session.',
+      'No reachable browser endpoint accepted a session.',
       {
         fix:
-          'Start Firefox or Zen with --remote-debugging-port, or set BIDI_WS_URL.' +
-          ' If a previous client died holding the session, Firefox frees it only on browser restart.',
+          'Start Firefox or Zen with --remote-debugging-port, start a Chromium browser' +
+          ' with --remote-debugging-port, or set BIDI_WS_URL.' +
+          ' If a previous client died holding a Firefox session, Firefox frees it only on browser restart.' +
+          ' For Chromium, approve the debugging permission dialog in the browser.',
         ...(lastError === undefined
           ? {}
           : { details: { lastError: formatError(lastError) } }),
@@ -200,7 +241,21 @@ export class SessionManager implements SessionManagerLike {
     let sawBusy = false;
 
     for (const candidate of candidates) {
-      const client = new BiDiClient({ url: candidate.endpoint, timeoutMs: this.#config.timeoutMs });
+      const client = new BiDiClient({
+        url: candidate.endpoint,
+        timeoutMs: this.#config.timeoutMs,
+        // Chromium serves CDP only: host the mapper in-process so the rest of
+        // the stack still speaks BiDi.
+        ...(candidate.browserFamily === 'chromium'
+          ? {
+              openSocket: () =>
+                openChromiumMapperSocket({
+                  cdpUrl: candidate.endpoint,
+                  timeoutMs: this.#config.timeoutMs,
+                }),
+            }
+          : {}),
+      });
       try {
         await client.connect();
 
@@ -211,7 +266,14 @@ export class SessionManager implements SessionManagerLike {
         const result = await client.request('session.new', { capabilities: {} });
         const sessionId =
           typeof result.sessionId === 'string' ? result.sessionId : undefined;
-        const capabilities = (result.capabilities ?? {}) as Record<string, unknown>;
+        const rawCapabilities = (result.capabilities ?? {}) as Record<
+          string,
+          unknown
+        >;
+        const capabilities =
+          candidate.browserFamily === 'chromium'
+            ? normalizeChromiumCapabilities(rawCapabilities)
+            : rawCapabilities;
 
         const pipeline = new EventPipeline();
         const contexts = new ContextManager(client);
@@ -236,7 +298,9 @@ export class SessionManager implements SessionManagerLike {
         this.#capabilities = capabilities;
         this.#profile = candidate.profilePath;
         this.#runtime = { events: pipeline, contexts, snapshots };
-        if (sessionId !== undefined) {
+        if (sessionId !== undefined && candidate.browserFamily !== 'chromium') {
+          // The mapper reports a synthetic session id and holds no
+          // browser-side session, so there is nothing to recover.
           this.#persistLastSession(sessionId, candidate.endpoint);
         }
 
@@ -336,6 +400,12 @@ export class SessionManager implements SessionManagerLike {
       return false;
     }
     const recoveryUrl = `${origin.protocol}//${origin.host}/session/${persisted.sessionId}`;
+
+    // The persisted file is user-writable data: apply the same loopback /
+    // BIDI_ALLOW_REMOTE gate discovery uses before dialing it.
+    if (!endpointAllowed(this.#config, recoveryUrl)) {
+      return false;
+    }
 
     const client = new BiDiClient({
       url: recoveryUrl,

@@ -4,7 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadConfig } from '../../config.js';
 import {
+  chromiumEndpointFromDataDir,
   discoverBrowsers,
+  extractUserDataDir,
   extractRemoteDebuggingPort,
 } from '../../connection/browser-discovery.js';
 
@@ -94,5 +96,76 @@ describe('discoverBrowsers profile-file gating', () => {
     expect(
       huge.some((c) => c.endpoint.endsWith(':99999/session'))
     ).toBe(false);
+  });
+});
+
+describe('chromiumEndpointFromDataDir', () => {
+  let root: string | undefined;
+
+  afterAll(() => {
+    if (root !== undefined) {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  function dataDirWith(contents: string | undefined): string {
+    if (root === undefined) {
+      root = mkdtempSync(join(tmpdir(), 'bidi-chromium-'));
+    }
+    const dir = mkdtempSync(join(root, 'data-'));
+    if (contents !== undefined) {
+      writeFileSync(join(dir, 'DevToolsActivePort'), contents);
+    }
+    return dir;
+  }
+
+  it('reads the port and browser WebSocket path', () => {
+    const dir = dataDirWith('9222\r\n/devtools/browser/abc-123\r\n');
+    expect(chromiumEndpointFromDataDir(dir)).toBe(
+      'ws://127.0.0.1:9222/devtools/browser/abc-123'
+    );
+  });
+
+  it('rejects missing, malformed, and non-browser files', () => {
+    expect(chromiumEndpointFromDataDir(dataDirWith(undefined))).toBeUndefined();
+    expect(chromiumEndpointFromDataDir(dataDirWith('nope\n/devtools/browser/x'))).toBeUndefined();
+    expect(chromiumEndpointFromDataDir(dataDirWith('9222\n'))).toBeUndefined();
+    expect(chromiumEndpointFromDataDir(dataDirWith('9222\n/devtools/page/x'))).toBeUndefined();
+  });
+
+  it('discovers a chromium candidate from BIDI_CHROMIUM_DATA_DIR', async () => {
+    const dir = dataDirWith('9333\n/devtools/browser/xyz\n');
+    const candidates = await discoverBrowsers(
+      loadConfig({ BIDI_CHROMIUM_DATA_DIR: dir })
+    );
+    expect(candidates).toContainEqual(
+      expect.objectContaining({
+        endpoint: 'ws://127.0.0.1:9333/devtools/browser/xyz',
+        source: 'chromium-devtools-port',
+        browserFamily: 'chromium',
+      })
+    );
+  });
+
+  it('marks BIDI_WS_URL DevTools endpoints as chromium', async () => {
+    const candidates = await discoverBrowsers(
+      loadConfig({ BIDI_WS_URL: 'ws://127.0.0.1:9222/devtools/browser/xyz' })
+    );
+    expect(candidates[0]).toMatchObject({
+      source: 'env',
+      browserFamily: 'chromium',
+    });
+  });
+});
+
+describe('extractUserDataDir', () => {
+  it('parses quoted and plain --user-data-dir values', () => {
+    expect(
+      extractUserDataDir('brave.exe --remote-debugging-port=9222 --user-data-dir="A:/Browsers/brave-portable/data"')
+    ).toBe('A:/Browsers/brave-portable/data');
+    expect(extractUserDataDir('chrome --user-data-dir=/tmp/chrome-profile')).toBe(
+      '/tmp/chrome-profile'
+    );
+    expect(extractUserDataDir('chrome --remote-debugging-port=9222')).toBeUndefined();
   });
 });

@@ -13,12 +13,13 @@ WebSocket (`ws://127.0.0.1:9222/session`). Modular TypeScript, two runtime deps
 only (`ws`, `@modelcontextprotocol/sdk`). No browser launch, no driver binary,
 no Puppeteer/Playwright.
 
-Status: v0.1.8 hardening + Chromium path. The stdio server boots and exposes
-`ping`, `browser`, `tabs`, `page` (snapshot/content), `console`, `observe`,
-`context` (containers), `spaces` (Zen), and `cleanup`. Socket drops clear
-session state honestly and the next connect recovers; Chromium runs through
-the chromium-bidi mapper with Firefox-only tools gated. The full matrix and
-docs land in v0.1.9 — the first public npm release.
+Status: v0.1.9 — the first public npm release. The stdio server boots and
+exposes `ping`, `browser`, `tabs`, `page` (snapshot/content), `console`,
+`observe`, `context` (containers), `spaces` (Zen), and `cleanup`. Socket drops
+clear session state honestly and the next connect recovers. Chromium is
+supported without chromedriver: the optional `chromium-bidi` mapper runs in
+this process and translates BiDi↔CDP (see `docs/chromium-mapper.md`), with
+Firefox-only tools gated by `UNSUPPORTED`.
 
 ## Structure
 
@@ -67,6 +68,7 @@ holds protocol/browser research.
 |---|---|
 | Add/change a tool | `src/tools/<name>.ts` + `registry.ts`, follow `base-tool.ts` (`defineTool`) |
 | Change connection/reconnect | `src/connection/{bidi-client,health-monitor,browser-discovery}.ts` |
+| Change Chromium bridging | `src/connection/chromium-mapper.ts` + `docs/chromium-mapper.md` |
 | Change event buffering/subscription | `src/connection/event-pipeline.ts` |
 | Read containers/spaces profile data | `src/profile/profile-store.ts` |
 | Change snapshots/element refs | `src/snapshot/{dom-snapshot,cache,element-resolver,token-optimizer}.ts` |
@@ -135,7 +137,8 @@ the absolute path.
 - **Future folders get a README**, not empty stubs. Replace it with real modules
   when the wave starts.
 - **Dependency gate.** No new runtime dependency without a design note. Runtime
-  deps stay `ws` + `@modelcontextprotocol/sdk`.
+  deps stay `ws` + `@modelcontextprotocol/sdk`; `chromium-bidi` is an optional
+  dependency pinned exactly, justified in `docs/chromium-mapper.md`.
 
 ## Development rules
 

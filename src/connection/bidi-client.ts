@@ -1,5 +1,6 @@
 import { WebSocket } from 'ws';
 import type { BiDiEvent, BiDiMessage } from '../types.js';
+import type { BiDiSocket } from './chromium-mapper.js';
 import { ActionableError } from '../utils/errors.js';
 
 interface PendingRequest {
@@ -18,6 +19,12 @@ export type BiDiClientState = 'disconnected' | 'connecting' | 'connected';
 export interface BiDiClientOptions {
   readonly url: string;
   readonly timeoutMs: number;
+  /**
+   * Custom socket opener for transports that are not a plain WebSocket —
+   * the Chromium mapper facade. Must satisfy the `ws`-like BiDiSocket
+   * surface; the returned socket is treated as a WebSocket internally.
+   */
+  readonly openSocket?: () => Promise<BiDiSocket>;
 }
 
 /**
@@ -27,6 +34,7 @@ export interface BiDiClientOptions {
 export class BiDiClient {
   readonly url: string;
   readonly #timeoutMs: number;
+  readonly #openSocketFn?: () => Promise<BiDiSocket>;
   readonly #pending = new Map<number, PendingRequest>();
   readonly #eventHandlers = new Set<(event: BiDiEvent) => void>();
   readonly #closeHandlers = new Set<() => void>();
@@ -34,10 +42,12 @@ export class BiDiClient {
   #socket?: WebSocket;
   #state: BiDiClientState = 'disconnected';
   #nextId = 1;
+  #generation = 0;
 
   constructor(options: BiDiClientOptions) {
     this.url = options.url;
     this.#timeoutMs = options.timeoutMs;
+    this.#openSocketFn = options.openSocket;
   }
 
   get state(): BiDiClientState {
@@ -95,6 +105,14 @@ export class BiDiClient {
     for (let attempt = 0; attempt < HANDSHAKE_RETRIES + 1; attempt++) {
       try {
         await this.#openSocket();
+        // The socket can drop between 'open' and this line (e.g. the mapper
+        // dies immediately): never report a connection that owns a dead socket.
+        if (this.#state !== 'connecting') {
+          throw new ActionableError(
+            'CONNECTION_FAILED',
+            'BiDi connection closed during connect.'
+          );
+        }
         this.#state = 'connected';
         return;
       } catch (error) {
@@ -115,15 +133,13 @@ export class BiDiClient {
     throw lastError;
   }
 
-  /** One full WebSocket handshake attempt. Resolves on 'open'. */
+  /** One full socket-open attempt (WebSocket or mapper facade). */
   #openSocket(): Promise<void> {
     this.#closeHandlersFired = false;
     return new Promise<void>((resolve, reject) => {
-      const socket = new WebSocket(this.url);
-      // Identity guard: after a timeout (or a retry) abandons this socket, a
-      // late 'open' must never flip the client back to 'connected'. Without
-      // this, a low BIDI_TIMEOUT could report a connection that owns nothing.
-      const abandoned = (): boolean => this.#socket !== socket;
+      let socket: WebSocket | undefined;
+      // Invalidates async socket creation if this attempt is abandoned.
+      const generation = ++this.#generation;
 
       const settle = (
         state: BiDiClientState,
@@ -131,19 +147,23 @@ export class BiDiClient {
         message: string,
         cause?: unknown
       ): void => {
-        if (this.#socket === socket) {
-          this.#socket = undefined;
+        clearTimeout(timer);
+        this.#generation += 1;
+        if (socket !== undefined) {
+          if (this.#socket === socket) {
+            this.#socket = undefined;
+          }
+          socket.removeAllListeners();
+          // ws emits the handshake-abort error asynchronously; without a
+          // listener the 'error' event crashes the process.
+          socket.on('error', () => {});
+          try {
+            socket.terminate();
+          } catch {
+            // Ignore terminate errors.
+          }
         }
         this.#state = state;
-        socket.removeAllListeners();
-        // ws emits the handshake-abort error asynchronously; without a
-        // listener the 'error' event crashes the process.
-        socket.on('error', () => {});
-        try {
-          socket.terminate();
-        } catch {
-          // Ignore terminate errors.
-        }
         this.#failPending(code, message);
         reject(
           new ActionableError(
@@ -154,39 +174,81 @@ export class BiDiClient {
         );
       };
 
-      this.#socket = socket;
-
       const timer = setTimeout(() => {
         settle('disconnected', 'CONNECTION_FAILED', `Timed out connecting to ${this.url}.`);
       }, this.#timeoutMs);
 
-      socket.on('error', (error) => {
-        clearTimeout(timer);
-        if (abandoned()) {
-          return;
+      void this.#createSocket().then(
+        (created) => {
+          // The attempt may have timed out or been superseded while the
+          // custom opener was still working.
+          if (generation !== this.#generation || this.#state !== 'connecting') {
+            try {
+              created.terminate();
+            } catch {
+              // Ignore terminate errors.
+            }
+            return;
+          }
+          socket = created;
+          // Identity guard: after a timeout (or a retry) abandons this socket, a
+          // late 'open' must never flip the client back to 'connected'. Without
+          // this, a low BIDI_TIMEOUT could report a connection that owns nothing.
+          const abandoned = (): boolean => this.#socket !== socket;
+          this.#socket = socket;
+
+          socket.on('error', (error) => {
+            if (abandoned()) {
+              return;
+            }
+            settle('disconnected', 'CONNECTION_FAILED', error.message, error);
+          });
+
+          socket.on('open', () => {
+            if (abandoned()) {
+              return;
+            }
+            clearTimeout(timer);
+            resolve();
+          });
+
+          socket.on('message', (data) => {
+            this.#handleMessage(String(data));
+          });
+
+          socket.on('close', () => {
+            clearTimeout(timer);
+            this.#state = 'disconnected';
+            this.#failPending('CONNECTION_CLOSED', 'BiDi connection closed.');
+            this.#fireClose();
+          });
+        },
+        (error) => {
+          clearTimeout(timer);
+          settle(
+            'disconnected',
+            'CONNECTION_FAILED',
+            error instanceof Error ? error.message : String(error),
+            error
+          );
         }
-        settle('disconnected', 'CONNECTION_FAILED', error.message, error);
-      });
-
-      socket.on('open', () => {
-        clearTimeout(timer);
-        if (abandoned()) {
-          return;
-        }
-        resolve();
-      });
-
-      socket.on('message', (data) => {
-        this.#handleMessage(data.toString());
-      });
-
-      socket.on('close', () => {
-        clearTimeout(timer);
-        this.#state = 'disconnected';
-        this.#failPending('CONNECTION_CLOSED', 'BiDi connection closed.');
-        this.#fireClose();
-      });
+      );
     });
+  }
+
+  /**
+   * Create the raw socket: a plain WebSocket for Firefox-family BiDi
+   * endpoints, or the mapper facade for Chromium.
+   */
+  #createSocket(): Promise<WebSocket> {
+    if (this.#openSocketFn === undefined) {
+      return Promise.resolve(new WebSocket(this.url));
+    }
+    // The facade satisfies the ws surface this client uses; the cast keeps
+    // the single socket field untyped-union free.
+    return this.#openSocketFn().then(
+      (facade) => facade as unknown as WebSocket
+    );
   }
 
   async request(
@@ -231,14 +293,15 @@ export class BiDiClient {
         resolve();
         return;
       }
+      socket.once('close', () => resolve());
       // `close()` throws synchronously on a CONNECTING socket; the 'error'
-      // and 'close' events still arrive and resolve the promise.
+      // and 'close' events still arrive and resolve the promise. The
+      // listener goes first so a synchronous emit cannot be missed.
       try {
         socket.close();
       } catch {
         // Socket is still handshaking; the close events will follow.
       }
-      socket.once('close', () => resolve());
     });
   }
 
