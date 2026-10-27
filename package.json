@@ -1,0 +1,86 @@
+{
+  "name": "bidi-browser-mcp",
+  "version": "0.1.9",
+  "description": "WebDriver BiDi browser MCP server — control your real Firefox (native BiDi) or Chromium browser (in-process mapper) over the W3C standard protocol",
+  "mcpName": "io.github.tushar49/bidi-browser-mcp",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "bidi-browser-mcp": "dist/bin.js"
+  },
+  "author": "Tushar Agarwal",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Tushar49/bidi-browser-mcp.git"
+  },
+  "homepage": "https://github.com/Tushar49/bidi-browser-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/Tushar49/bidi-browser-mcp/issues"
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.map"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "mcp",
+    "automation",
+    "bidi",
+    "webdriver-bidi",
+    "firefox",
+    "browser-automation",
+    "model-context-protocol",
+    "ai-agent",
+    "browser-mcp",
+    "chromium",
+    "chrome",
+    "brave"
+  ],
+  "engines": {
+    "node": ">=20.19"
+  },
+  "packageManager": "pnpm@12.14.0",
+  "scripts": {
+    "build": "tsc && node scripts/postbuild.mjs",
+    "start": "node dist/bin.js",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "smoke": "node scripts/dev-smoke.mjs",
+    "detect": "node scripts/dev-detect.mjs",
+    "setup": "node scripts/setup.mjs",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "benchmark": "vitest run --config vitest.benchmark.config.ts",
+    "lint": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "clean": "node -e \"const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true})\"",
+    "verify:release": "node scripts/verify-release.mjs",
+    "verify:package": "node scripts/verify-package.mjs",
+    "prepack": "pnpm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "ws": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.39",
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.9"
+  },
+  "optionalDependencies": {
+    "chromium-bidi": "158.0.8123-0"
+  }
+}

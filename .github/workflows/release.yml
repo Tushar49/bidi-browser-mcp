@@ -1,0 +1,104 @@
+name: Release
+
+# Tagged releases only, from main only. Builds dist/, publishes a GitHub
+# Release with the bundle, and publishes to npm via Trusted Publishing
+# (tokenless OIDC — requires the package's Trusted Publisher on npmjs.com
+# to point at this repo + release.yml). Dev branch can never cut a release.
+#
+# npm dist-tag: prerelease tags (vX.Y.Z-foo) publish under "alpha",
+# stable tags publish under "latest". A version already on npm is skipped,
+# so a manual first publish (bootstrap) and workflow re-runs are safe.
+#
+# Usage:
+#   1. Promote dev → main (promote.yml, gives main the release version).
+#   2. Bump package.json + server.json together, commit on dev, promote.
+#   3. Tag main:  git tag vX.Y.Z && git push origin vX.Y.Z
+#   4. This workflow builds, attaches the bundle, publishes the GitHub
+#      Release and npm (no token needed — OIDC via GitHub).
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Refuse release if tag is not on main
+        run: |
+          git fetch origin main --depth=50
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "❌ Tag $GITHUB_REF_NAME is not on main. Releases ship from main only."
+            exit 1
+          fi
+          echo "✅ Tag $GITHUB_REF_NAME is on main."
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'pnpm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - run: pnpm run typecheck
+
+      - run: pnpm run build
+
+      - name: Verify release metadata (package.json, server.json, tag)
+        run: pnpm run verify:release "$GITHUB_REF_NAME"
+
+      - name: Verify published tarball is dist-only
+        run: pnpm run verify:package
+
+      - name: Determine npm dist-tag
+        id: disttag
+        run: |
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            echo "tag=alpha" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check whether this version is already on npm
+        id: npm-version
+        run: |
+          name=$(node -p "require('./package.json').name")
+          version="${GITHUB_REF_NAME#v}"
+          if npm view "${name}@${version}" version >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::${name}@${version} is already published — skipping npm publish."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to npm (trusted publishing, tokenless OIDC)
+        if: steps.npm-version.outputs.exists != 'true'
+        run: npm publish --provenance --tag ${{ steps.disttag.outputs.tag }}
+
+      - name: Package release bundle (runtime files only)
+        run: |
+          tar --exclude='*.map' -czf "bidi-browser-mcp-dist-${GITHUB_REF_NAME}.tar.gz" \
+            dist/ package.json README.md LICENSE server.json
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: bidi-browser-mcp-dist-${{ github.ref_name }}.tar.gz
+          generate_release_notes: true

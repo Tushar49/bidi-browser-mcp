@@ -1,0 +1,23 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.tushar49/bidi-browser-mcp",
+  "title": "BiDi Browser MCP",
+  "description": "Control your real Firefox (native WebDriver BiDi) or Chromium browser (in-process mapper) over the W3C standard protocol.",
+  "repository": {
+    "url": "https://github.com/Tushar49/bidi-browser-mcp",
+    "source": "github"
+  },
+  "version": "0.1.9",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "bidi-browser-mcp",
+      "version": "0.1.9",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": []
+    }
+  ]
+}
