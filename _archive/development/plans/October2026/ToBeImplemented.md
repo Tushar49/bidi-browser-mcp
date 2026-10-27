@@ -7,14 +7,14 @@ needs research, a design note, and an explicit go/no-go before code.
 
 | Item | Why | Notes |
 |---|---|---|
-| `BrowserBackend` interface | Avoid Firefox assumptions leaking into tools | Define now; implement only Firefox in v1 |
-| Chromium backend (Chrome) | User asked for Chrome/Brave control | ChromeDriver BiDi, `debuggerAddress` attach, version-matched driver |
-| Edge backend | Chromium family | msedgedriver; likely same code path as Chrome |
-| Brave backend | Chromium family | ChromeDriver + Brave binary/debug address; experimental |
-| Opera/Vivaldi | Chromium family | Best-effort; unverified |
+| `BrowserBackend` interface | Avoid Firefox assumptions leaking into tools | Shipped as `ConnectionRuntimeLike` + `BrowserFamily`; no separate backend classes |
+| Chromium backend (Chrome) | User asked for Chrome/Brave control | **Shipped 0.1.9**: in-process `chromium-bidi` mapper over CDP, no driver |
+| Edge backend | Chromium family | **Shipped 0.1.9** via the same mapper path |
+| Brave backend | Chromium family | **Shipped 0.1.9**; portable `--user-data-dir` discovery verified live |
+| Opera/Vivaldi | Chromium family | Mapper path should work; best-effort, unverified |
 | Safari backend | User asked | Deferred; WebKit BiDi is experimental/partial, safaridriver only |
-| Driver manager | Chrome/Edge need drivers | Optional, no new hard dependency in core; detect user-installed driver first |
-| Capability registry | Commands differ per browser/version | Tools ask capabilities, not browser names |
+| Driver manager | Chrome/Edge need drivers | **Obsolete** for Chromium: no driver exists in this design |
+| Capability registry | Commands differ per browser/version | Still needed: static matrix by family + mapper version, `UNSUPPORTED` on Firefox-only actions |
 | Cross-browser test matrix | Prevent assumptions | Firefox 153/158; Chrome/Edge current; Brave best-effort; Safari future |
 
 See [`../../../research/October2026/06-cross-browser-bidi.md`](../../../research/October2026/06-cross-browser-bidi.md).

@@ -1,4 +1,8 @@
-# Revised Roadmap — 2026-10-23
+# Revised Roadmap - 2026-10-23
+
+> **Historical.** Superseded by [`post-0.1.9-roadmap.md`](./post-0.1.9-roadmap.md).
+> 0.1.9 shipped Chromium plus 9 tools, not the full matrix; the remaining tool
+> surface moved to 0.2.0 and later.
 
 Supersedes the release mapping in `implementation-plan.md` from v0.1.7 onward.
 Waves 1–3 are done (connect, contexts/events, snapshot). The focus shifts to

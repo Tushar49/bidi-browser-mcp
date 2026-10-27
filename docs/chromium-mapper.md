@@ -52,6 +52,21 @@ are empty strings.
   `chromium-bidi/out/Default/gen/src/cdp/CdpConnection.js`. That path is a build
   artifact and may move between versions — hence the exact pin. A failed import
   surfaces as `MISSING_DEPENDENCY` with the install command, never a crash.
+  `pnpm verify:release` fails if the pin in the code and the pin in
+  `package.json` drift apart.
+- Being optional means npm/pnpm normally install it, but two setups skip it:
+  `--omit=optional` (common in CI/Docker slims) and `engine-strict` with a Node
+  version outside the mapper's own range (`>=20.19.0 <22.0.0 || >=22.12.0`;
+  Node 22.0–22.11 are excluded). Both are recoverable: the error text names the
+  exact version, the same-prefix install command, the omit flag, and the Node
+  range when relevant. The package's own `engines` stays `>=20.19` on purpose —
+  Firefox does not need the mapper, so a whole-package refusal would be wrong.
+- Recovery differs by manager. npm can be repaired beside the server
+  (`npm install -g chromium-bidi@158.0.8123-0`, or in the server's project).
+  pnpm isolates each global install in its own virtual store, so a separate
+  `pnpm add -g chromium-bidi` is **not** visible to the server — reinstall the
+  server (`pnpm add -g bidi-browser-mcp`) or use `pnpm dlx`. The mapper also
+  pulls its `devtools-protocol` peer (about 30 MB on disk).
 - Runtime dependency count otherwise stays `ws` + `@modelcontextprotocol/sdk`.
 - License: Apache-2.0 (Google/Microsoft); compatible with this project's MIT.
 

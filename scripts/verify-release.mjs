@@ -8,7 +8,23 @@ const server = JSON.parse(
 );
 const tag = process.argv[2]?.replace(/^v/, '');
 
+const mapperSource = readFileSync(
+  new URL('../src/connection/chromium-mapper.ts', import.meta.url),
+  'utf8'
+);
+const mapperPin = /const MAPPER_VERSION = '([^']+)'/.exec(mapperSource)?.[1];
+
 const errors = [];
+
+// The deep import into chromium-bidi is version-specific: keep the code pin,
+// the npm metadata and the docs on one version.
+if (mapperPin === undefined) {
+  errors.push('chromium-mapper.ts has no MAPPER_VERSION pin');
+} else if (pkg.optionalDependencies?.['chromium-bidi'] !== mapperPin) {
+  errors.push(
+    `package.json optionalDependencies.chromium-bidi "${pkg.optionalDependencies?.['chromium-bidi']}" != mapper pin "${mapperPin}"`
+  );
+}
 
 if (!pkg.mcpName) {
   errors.push('package.json is missing "mcpName"');

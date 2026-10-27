@@ -43,14 +43,27 @@ browser.
 This server connects to an **already-running Firefox** over its native BiDi
 WebSocket. Your logins, cookies, extensions, and containers stay intact.
 
-## Planned surface
+## Tool surface
 
-16 action-based tools, roughly 110 actions. The default `core` toolset is 10
-tools; `network` and `devtools` are opt-in.
+Nine tools ship today (`core`): `ping` · `browser` · `tabs` · `page` ·
+`console` · `observe` · `context` · `spaces` · `cleanup`.
 
-`ping` · `browser` · `tabs` · `page` · `script` · `interact` · `form` ·
-`network` · `storage` · `emulate` · `console` · `observe` · `context` ·
-`extensions` · `cleanup` · `devtools`
+Next (0.2.0) — the automation loop:
+
+- `interact` — click, type, clear, press, select, check, upload, scroll
+- `page.navigate` with `wait: none | domContentLoaded | load`
+- `network` (opt-in, read-only): wait for request/response metadata
+- gated `script.evaluate`
+
+Later — state and environment:
+
+- `storage` — cookies first, then web storage
+- `emulate` — locale, timezone, geolocation (tested null-reset only)
+- network intercepts with scoped, auto-removed handlers
+- `extensions` — Firefox, install gated by `BIDI_ALLOW_EXTENSION_INSTALL`
+- opt-in `devtools` — `moz:debugging` (Firefox 153+) and `moz:profiler`
+  (Firefox 154+), screencast (Firefox 154+), preload scripts and realms
+- `BIDI_OUTPUT_MODE=file`, health monitor
 
 Firefox-specific capabilities:
 
@@ -82,7 +95,9 @@ partial, and is not supported yet.
 - Firefox 129+ for the core surface; 153 ESR recommended; 158+ for the full
   surface (debugger, profiler, screencast, newer emulation)
 - Two runtime dependencies: `ws`, `@modelcontextprotocol/sdk`
-- Optional: `chromium-bidi` for Chromium support (installed on demand)
+- Optional: `chromium-bidi` for Chromium support. Its own `engines` range is
+  Node 20.19+, 21.x, or 22.12+ (22.0–22.11 are excluded); Firefox works on the
+  wider Node range either way.
 
 ## Chromium browsers (Chrome, Brave, Edge, …)
 
@@ -95,9 +110,22 @@ no extension, no browser restart.
 1. Launch Chromium with `--remote-debugging-port=<port>`.
 2. Approve the debugging permission dialog in the browser window when the
    server connects (Chromium asks once per connection).
-3. Install the optional mapper: `npm install chromium-bidi` (or
-   `pnpm add chromium-bidi`). Without it, Chromium sessions fail with a
-   `MISSING_DEPENDENCY` error that names the exact install command.
+3. The optional mapper is installed together with this package. If it is
+   missing — an install that omitted optional dependencies, or Node outside
+   the mapper's range — Chromium sessions fail with `MISSING_DEPENDENCY` and
+   the fix names the exact command. npm users can install it beside the
+   server:
+
+   ```bash
+   npm install -g chromium-bidi@158.0.8123-0   # global npm server
+   npm install chromium-bidi@158.0.8123-0      # project npm server
+   ```
+
+   pnpm isolates global packages, so a separately installed global
+   `chromium-bidi` is not visible to the server; reinstall the server itself
+   (`pnpm add -g bidi-browser-mcp`) or run it through `pnpm dlx` instead.
+   The version is pinned because the mapper's deep import is a build artifact.
+   It also pulls `devtools-protocol` (about 30 MB on disk).
 
 Discovery finds a running Chromium browser two ways: it reads
 `DevToolsActivePort` from the standard Chrome, Brave, Edge, Chromium, and
@@ -153,14 +181,15 @@ pnpm detect
 
 ## Install
 
-v0.1.3 is a local carcass and is not published. Use **Build from source** below.
-The first public npm release is planned as v0.2.0.
-
-Once published:
+v0.1.9 is the first public release. Install globally with npm or pnpm:
 
 ```bash
 npm install -g bidi-browser-mcp
+pnpm add -g bidi-browser-mcp
 ```
+
+A global install is the simplest MCP setup. For Chromium, avoid
+`--omit=optional` (see Chromium browsers above).
 
 Or reference it from an MCP client without a global install:
 
@@ -170,6 +199,19 @@ Or reference it from an MCP client without a global install:
     "bidi-browser": {
       "command": "npx",
       "args": ["-y", "bidi-browser-mcp@latest"]
+    }
+  }
+}
+```
+
+The pnpm equivalent:
+
+```json
+{
+  "mcpServers": {
+    "bidi-browser": {
+      "command": "pnpm",
+      "args": ["dlx", "bidi-browser-mcp@latest"]
     }
   }
 }
@@ -219,11 +261,25 @@ After `pnpm build`, restart the MCP server so it loads the new `dist/`. Once the
 package is published, replace the dev entry with
 `pnpm dlx bidi-browser-mcp@latest` (or a global install).
 
+## Troubleshooting
+
+- **`MISSING_DEPENDENCY` on Chromium** — the optional `chromium-bidi` mapper is
+  not resolvable from the server. npm: install the exact pin beside the server
+  (`npm install -g chromium-bidi@158.0.8123-0`) or reinstall without
+  `--omit=optional`. pnpm: reinstall the server itself (`pnpm add -g
+  bidi-browser-mcp`) or use `pnpm dlx`; pnpm's global installs are isolated.
+- **Chromium connect times out / hangs** — approve the in-browser debugging
+  permission dialog; Chromium stalls the connection until it is allowed.
+- **`SESSION_BUSY` on Firefox/Zen** — Firefox allows one BiDi session. Close the
+  other client (another MCP server, a test script, DevTools) and retry; the
+  session is not released until the browser or the client ends it.
+- **No Firefox endpoint found** — start the browser with
+  `--remote-debugging-port=9222` (Firefox/Zen) or set `BIDI_WS_URL`.
+
 ## Configuration
 
-Only the variables below are read by v0.1.7. Connection/session variables land
-with v0.2.0. `BIDI_OUTPUT_MODE=file` is not implemented yet and is rejected at
-startup; the allow flags are reserved for later waves.
+`BIDI_OUTPUT_MODE=file` is not implemented yet and is rejected at startup; the
+allow flags are reserved for later waves.
 
 | Variable | Default | Description |
 |---|---|---|

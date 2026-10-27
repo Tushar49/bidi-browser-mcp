@@ -66,12 +66,38 @@ const MAPPER_CDP_MODULE =
 // version can move or rename it, so the dependency is pinned exactly.
 const MAPPER_VERSION = '158.0.8123-0';
 
-const MAPPER_MISSING_FIX =
-  'Install the optional mapper: npm install chromium-bidi@' +
-  MAPPER_VERSION +
-  ' (pnpm: pnpm add chromium-bidi@' +
-  MAPPER_VERSION +
-  ').';
+// chromium-bidi's own engines range. The server itself runs on wider Node
+// versions (Firefox needs no mapper); only Chromium needs this range.
+const MAPPER_NODE_RANGE = '>=20.19.0 <22.0.0 || >=22.12.0';
+
+/** True when this Node version satisfies chromium-bidi's engines range. */
+export function nodeSupportsMapper(version = process.versions.node): boolean {
+  const [major = 0, minor = 0] = version.split('.').map(Number);
+  if (major === 20) return minor >= 19;
+  if (major === 21) return true;
+  if (major === 22) return minor >= 12;
+  return major > 22;
+}
+
+function mapperInstallFix(): string {
+  const parts = [
+    'Install the optional mapper with the package manager that installed this' +
+      ' server, without omitting optional dependencies.' +
+      ` npm: npm install -g chromium-bidi@${MAPPER_VERSION} (global server)` +
+      ` or npm install chromium-bidi@${MAPPER_VERSION} (project server).` +
+      ' pnpm: reinstall the server itself (pnpm add -g bidi-browser-mcp) or run' +
+      ' it through pnpm dlx - pnpm isolates global packages, so a separate' +
+      ' global chromium-bidi is not visible to the server.' +
+      ' If an install used --omit=optional, reinstall without it.',
+  ];
+  if (!nodeSupportsMapper()) {
+    parts.push(
+      `chromium-bidi requires Node ${MAPPER_NODE_RANGE}; this process is` +
+        ` Node ${process.versions.node}.`
+    );
+  }
+  return parts.join(' ');
+}
 
 function isModuleNotFound(error: unknown): boolean {
   const code = (error as { code?: unknown } | null)?.code;
@@ -104,7 +130,14 @@ async function loadMapperModules(): Promise<MapperModules> {
       throw new ActionableError(
         'MISSING_DEPENDENCY',
         'Chromium support needs the optional "chromium-bidi" mapper package.',
-        { fix: MAPPER_MISSING_FIX, details: { reason } }
+        {
+          fix: mapperInstallFix(),
+          details: {
+            reason,
+            node: process.versions.node,
+            requiredNode: MAPPER_NODE_RANGE,
+          },
+        }
       );
     }
     throw new ActionableError(
@@ -112,11 +145,19 @@ async function loadMapperModules(): Promise<MapperModules> {
       'The installed chromium-bidi mapper failed to load.',
       {
         fix:
-          'chromium-bidi is pinned at ' +
-          MAPPER_VERSION +
-          ' because the mapper deep-import path moves between versions.' +
-          ' Reinstall exactly that version.',
-        details: { reason, pinnedVersion: MAPPER_VERSION },
+          `chromium-bidi is pinned at ${MAPPER_VERSION} because the mapper` +
+          ' deep-import path moves between versions. Reinstall exactly that' +
+          ' version with the package manager that installed this server' +
+          (nodeSupportsMapper()
+            ? '.'
+            : `; this process is Node ${process.versions.node} and the mapper` +
+              ` requires Node ${MAPPER_NODE_RANGE}.`),
+        details: {
+          reason,
+          pinnedVersion: MAPPER_VERSION,
+          node: process.versions.node,
+          requiredNode: MAPPER_NODE_RANGE,
+        },
       }
     );
   }

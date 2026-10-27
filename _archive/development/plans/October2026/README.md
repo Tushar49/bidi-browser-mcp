@@ -6,15 +6,18 @@ a concrete counterexample.
 
 ## Read order
 
-1. [`v0.1.3-build-plan.md`](./v0.1.3-build-plan.md) — carcass (done).
-2. [`v0.1.4-build-plan.md`](./v0.1.4-build-plan.md) — connection, discovery,
+1. [`post-0.1.9-roadmap.md`](./post-0.1.9-roadmap.md) - **current plan**:
+   packaging decisions, verified capability matrix, 0.2.0 waves, release gates.
+2. [`v0.1.3-build-plan.md`](./v0.1.3-build-plan.md) - carcass (done).
+3. [`v0.1.4-build-plan.md`](./v0.1.4-build-plan.md) - connection, discovery,
    session, `browser` status (done).
-3. [`implementation-plan.md`](./implementation-plan.md) — product decisions,
+4. [`implementation-plan.md`](./implementation-plan.md) - product decisions,
    architecture, waves, release mapping.
-4. [`release-plan-v0.2.0.md`](./release-plan-v0.2.0.md) — first usable release.
-5. [`risk-register.md`](./risk-register.md) — what can go wrong and mitigation.
-6. [`july-carryover.md`](./july-carryover.md) — what survived the July plan.
-7. [`ToBeImplemented.md`](./ToBeImplemented.md) — parked features; not release
+5. [`release-plan-v0.2.0.md`](./release-plan-v0.2.0.md) - first usable release
+   (tool list superseded by the post-0.1.9 roadmap).
+6. [`risk-register.md`](./risk-register.md) - what can go wrong and mitigation.
+7. [`july-carryover.md`](./july-carryover.md) - what survived the July plan.
+8. [`ToBeImplemented.md`](./ToBeImplemented.md) - parked features; not release
    commitments.
 
 Research companions:
@@ -22,15 +25,21 @@ Research companions:
 
 ## Current repo state
 
-- Branch `dev`; `main` holds the previous scaffold via prior promote.
-- `package.json` 0.1.4; stdio server boots; `tools/list` returns `ping` and
-  `browser`.
-- v0.1.3 and v0.1.4 are kept local. The first public npm release is v0.2.0.
-- Config/errors/result/registry, discovery, BiDi client, and single-session
-  manager are implemented and tested (28 unit tests).
-- `pnpm setup`, `pnpm smoke`, and `pnpm detect` exist.
-- Packaging, CI, promote, release, and registry metadata are already in place.
-- No snapshot/browsing-tool code beyond `browser` exists yet.
+- Branch `dev`; `main` holds the previous promote.
+- `package.json` 0.1.9 (first public npm release); the only version tables in
+  the older plans are historical.
+- 9 tools ship: `ping`, `browser`, `tabs`, `page`, `console`, `observe`,
+  `context`, `spaces`, `cleanup`.
+- Firefox-family + Chromium discovery, single-session manager, snapshots,
+  containers, Zen spaces, and the in-process `chromium-bidi` mapper are
+  implemented and tested (19 files / 115 unit tests).
+- Chromium: `chromium-bidi` is an exact-pinned optional dependency; the mapper
+  deep import loads from a clean npm install. Node range and
+  `--omit=optional` are handled in the error path, not in `engines`.
+- `pnpm setup`, `pnpm smoke`, `pnpm detect`, `verify:release` (now also guards
+  the mapper pin) and `verify:package` exist.
+- Remaining tool surface and the 0.2.0 cut live in
+  [`post-0.1.9-roadmap.md`](./post-0.1.9-roadmap.md).
 
 ## Product identity (fixed unless we explicitly change it)
 

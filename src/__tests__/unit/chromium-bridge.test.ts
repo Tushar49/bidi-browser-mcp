@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BiDiClient } from '../../connection/bidi-client.js';
+import { nodeSupportsMapper } from '../../connection/chromium-mapper.js';
 import type { BiDiSocket } from '../../connection/chromium-mapper.js';
 
 /**
@@ -135,5 +136,16 @@ describe('BiDiClient custom socket opener (Chromium mapper path)', () => {
       expect(onClose).toHaveBeenCalledTimes(1);
     });
     expect(client.state).toBe('disconnected');
+  });
+});
+
+describe('nodeSupportsMapper', () => {
+  it('accepts the ranges chromium-bidi declares', () => {
+    expect(nodeSupportsMapper('20.19.0')).toBe(true);
+    expect(nodeSupportsMapper('20.18.9')).toBe(false);
+    expect(nodeSupportsMapper('21.7.3')).toBe(true);
+    expect(nodeSupportsMapper('22.5.0')).toBe(false);
+    expect(nodeSupportsMapper('22.12.0')).toBe(true);
+    expect(nodeSupportsMapper('24.1.0')).toBe(true);
   });
 });
