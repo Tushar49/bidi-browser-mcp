@@ -85,12 +85,17 @@ describe('context tool (live session via mock)', () => {
     await expect(contextTool.handler({ action: 'remove', userContext: 'default' }, ctx)).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
-    await expect(contextTool.handler({ action: 'tabs-in' }, ctx)).rejects.toMatchObject({
-      code: 'INVALID_ARGUMENT',
-    });
     await expect(contextTool.handler({ action: 'remove', userContext: 'ghost' }, ctx)).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
+  });
+
+  it('defaults tabs-in to the default container', async () => {
+    server = new MockBiDiServer();
+    ctx = await makeContext(server);
+
+    const tabsIn = await contextTool.handler({ action: 'tabs-in' }, ctx);
+    expect(tabsIn.data).toMatchObject({ userContext: 'default' });
   });
 
   it('requires confirm before removing a container', async () => {

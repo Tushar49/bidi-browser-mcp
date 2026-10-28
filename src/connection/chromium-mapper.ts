@@ -173,6 +173,13 @@ const CLOSED = 3;
  * reply is re-emitted as a 'message' event, and the CDP side dropping is
  * surfaced as a socket close.
  */
+/**
+ * BiDiWeSocket facade for the in-browser BiDi proxy: every `send` is a
+ * browser message, and pre-`open` receives are buffered until attach.
+ *
+ * Exported for unit tests (startup buffering, close-before-open). It is not
+ * part of the package's public surface — reachable only from the mapper.
+ */
 export class MapperSocket extends EventEmitter implements BiDiSocket {
   readonly CLOSED = CLOSED;
   readyState = CONNECTING;

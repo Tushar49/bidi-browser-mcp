@@ -105,22 +105,39 @@ export function fitToBudget(
     truncatedElements = fit.meta.truncated;
   }
 
-  // Whatever is left after url, title, and elements belongs to the text.
-  const remaining = budget - payloadChars(fittedElements);
-  let text = snapshot.text;
+  // Whatever is left after url, title, elements, and the `text` key costs
+  // belongs to the text. The budget is measured on the JSON encoding —
+  // escaped characters (quotes, newlines, non-ASCII) cost more than raw
+  // characters, so a raw slice overshoots the declared budget.
+  const textKeyCost = chars('"text":');
+  const remaining = budget - payloadChars(fittedElements) - 1 - textKeyCost;
+  const text = snapshot.text;
+  let keptText = text;
   let omittedTextChars = 0;
   if (chars(text) > remaining) {
-    // Two characters for the JSON quotes around the string.
-    const largest = Math.max(0, remaining - 2);
-    text = text.slice(0, largest);
-    omittedTextChars = snapshot.text.length - text.length;
+    const quotedLength = (value: string): number => JSON.stringify(value).length;
+    // Binary-search the largest raw prefix whose JSON encoding fits.
+    let low = 0;
+    let high = text.length;
+    let best = 0;
+    while (low <= high) {
+      const mid = Math.floor((low + high) / 2);
+      if (quotedLength(text.slice(0, mid)) <= remaining) {
+        best = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    keptText = text.slice(0, best);
+    omittedTextChars = text.length - best;
   }
 
   return {
     url: snapshot.url,
     title: snapshot.title,
     elements: fittedElements,
-    ...(text.length > 0 ? { text } : {}),
+    ...(keptText.length > 0 ? { text: keptText } : {}),
     meta: {
       truncated: truncatedElements || omittedTextChars > 0 || droppedByCap > 0,
       originalChars: original,

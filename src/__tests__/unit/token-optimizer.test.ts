@@ -59,6 +59,27 @@ describe('fitToBudget', () => {
     expect(fitted.elements.length).toBeLessThan(200);
     expect(fitted.meta.truncated).toBe(true);
   });
+
+  it('measures the text budget on the JSON encoding, not raw length', () => {
+    // Every character escapes in JSON: quotes become \" (2 chars), newlines
+    // \\n (2), and emoji/thin spaces escape to 6 bytes (3 chars). A raw slice
+    // overshoots the declared budget by ~2x.
+    const escaping = '"a"\n"b"\n' + '💥'.repeat(50);
+    const fitted = fitToBudget(snapshot(0, escaping), 300, { includeText: true });
+
+    const kept = fitted.text ?? '';
+    expect(kept.length).toBeGreaterThan(0);
+    expect(JSON.stringify(kept).length).toBeLessThanOrEqual(300 + 1);
+    expect(fitted.meta.omittedTextChars).toBe(escaping.length - kept.length);
+  });
+
+  it('keeps the whole text when it fits the JSON budget', () => {
+    const text = '"quoted" and\nnewlines 💥';
+    const fitted = fitToBudget(snapshot(0, text), 400, { includeText: true });
+
+    expect(fitted.text).toBe(text);
+    expect(fitted.meta.omittedTextChars).toBe(0);
+  });
 });
 
 describe('fitToBudget with DOM-capped elements', () => {

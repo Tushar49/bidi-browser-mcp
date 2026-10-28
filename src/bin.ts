@@ -6,6 +6,7 @@
 
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { createServer, VERSION } from './index.js';
+import { formatError } from './utils/errors.js';
 
 async function main(): Promise<void> {
   const { server, session } = createServer();
@@ -34,7 +35,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(`bidi-browser-mcp failed to start: ${message}`);
+  // Code + fix, not just the message: a startup failure must be actionable.
+  console.error(`bidi-browser-mcp failed to start: ${formatError(error)}`);
   process.exit(1);
 });

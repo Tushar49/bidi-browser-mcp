@@ -27,7 +27,24 @@ const CHROMIUM_FAMILY_PROCESSES = [
   'thorium',
   'yandex',
   'opera',
+  'google-chrome',
 ] as const;
+
+/**
+ * Match a process basename against the known families exactly: `brave`,
+ * `brave.exe`, or the macOS bundle executable `brave browser`. Substring
+ * matching would misclassify `frozen.exe`/`citizen.exe` (they contain `zen`)
+ * and helper processes like `zen portal`.
+ */
+export function matchesKnownProcess(name: string): string | undefined {
+  const base = name.trim().replace(/\.exe$/, '').toLowerCase();
+  const exact = KNOWN_PROCESSES.find((candidate) => base === candidate);
+  if (exact !== undefined) {
+    return exact;
+  }
+  const spaced = KNOWN_PROCESSES.find((candidate) => base === `${candidate} browser`);
+  return spaced;
+}
 
 const KNOWN_PROCESSES = [
   ...FIREFOX_FAMILY_PROCESSES,
@@ -296,10 +313,10 @@ interface ProcessInfo {
 async function processCommandLines(): Promise<readonly ProcessInfo[]> {
   try {
     if (platform() === 'win32') {
-      const script = `Get-CimInstance Win32_Process | Where-Object { $_.Name -match '${KNOWN_PROCESSES.join('|')}' } | Select-Object ProcessId,Name,CommandLine | ConvertTo-Json -Compress`;
+      const script = `Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^(${KNOWN_PROCESSES.map((name) => `${name}\\.exe`).join('|')})$' } | Select-Object ProcessId,Name,CommandLine | ConvertTo-Json -Compress`;
       const { stdout } = await execFileAsync(
         'powershell.exe',
-        ['-NoProfile', '-Command', script],
+        ['-NoProfile', '-NonInteractive', '-Command', script],
         { timeout: 5_000, maxBuffer: 10 * 1024 * 1024 }
       );
 
@@ -313,11 +330,18 @@ async function processCommandLines(): Promise<readonly ProcessInfo[]> {
           (item) =>
             typeof item.CommandLine === 'string' && typeof item.Name === 'string'
         )
-        .map((item) => ({
-          processId: typeof item.ProcessId === 'number' ? item.ProcessId : 0,
-          name: item.Name as string,
-          commandLine: item.CommandLine as string,
-        }));
+        .flatMap((item) => {
+          const family = matchesKnownProcess(item.Name as string);
+          return family === undefined
+            ? []
+            : [
+                {
+                  processId: typeof item.ProcessId === 'number' ? item.ProcessId : 0,
+                  name: family,
+                  commandLine: item.CommandLine as string,
+                },
+              ];
+        });
     }
 
     const { stdout } = await execFileAsync('ps', ['-axo', 'pid=,command='], {
@@ -331,9 +355,12 @@ async function processCommandLines(): Promise<readonly ProcessInfo[]> {
       .filter((match): match is RegExpExecArray => match !== null)
       .flatMap((match) => {
         const commandLine = match[2];
-        const name = KNOWN_PROCESSES.find((candidate) =>
-          commandLine.toLowerCase().includes(candidate)
-        );
+        // Match the executable's basename, not the whole command line:
+        // substring matching would pull in tools that merely mention a
+        // browser name, and frozen.exe/citizen.exe on Windows.
+        const argv0 = commandLine.split(/\s+/)[0] ?? '';
+        const basename = argv0.slice(argv0.lastIndexOf('/') + 1);
+        const name = matchesKnownProcess(basename);
         return name === undefined
           ? []
           : [{ processId: Number(match[1]), name, commandLine }];

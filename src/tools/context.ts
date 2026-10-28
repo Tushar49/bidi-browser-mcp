@@ -162,12 +162,10 @@ export const contextTool = defineTool({
       }
 
       case 'tabs-in': {
-        const userContext = typeof args.userContext === 'string' ? args.userContext : undefined;
-        if (userContext === undefined || userContext === '') {
-          throw new ActionableError('INVALID_ARGUMENT', 'context.tabs-in requires userContext.', {
-            fix: 'Pass the id from context.list.',
-          });
-        }
+        // Tab-in-container queries usually mean the default container, so a
+        // missing id defaults there instead of failing (Wave 0 small fix).
+        const raw = typeof args.userContext === 'string' ? args.userContext.trim() : '';
+        const userContext = raw === '' ? 'default' : raw;
         const tree = await session.request('browsingContext.getTree', { maxDepth: 1 });
         const tabs = ((tree.contexts as { context?: unknown; url?: unknown; userContext?: unknown }[] | undefined) ?? [])
           .filter((entry) => entry.userContext === userContext)

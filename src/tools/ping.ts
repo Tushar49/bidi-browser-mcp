@@ -1,5 +1,6 @@
 import type { JsonSchema } from '../types.js';
 import { defineTool, requireAction } from './base-tool.js';
+import { redactStatusProfile } from '../utils/redact.js';
 import { ok } from '../utils/result.js';
 
 const ACTIONS = ['status'] as const;
@@ -65,7 +66,10 @@ export const pingTool = defineTool({
   },
   handler: async (args, ctx) => {
     const action = requireAction(args, 'ping', ACTIONS);
-    const status = ctx.session === undefined ? { connected: false } : await ctx.session.status();
+    const raw = ctx.session === undefined ? { connected: false } : await ctx.session.status();
+    // Browser capabilities can carry the profile path (moz:profile), which
+    // embeds the OS username — redact before the payload leaves the tool.
+    const status = redactStatusProfile(raw);
 
     return ok(action, {
       serverVersion: ctx.version,

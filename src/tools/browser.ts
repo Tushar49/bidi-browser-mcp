@@ -1,6 +1,7 @@
 import type { JsonSchema } from '../types.js';
 import { defineTool, requireAction } from './base-tool.js';
 import { ActionableError } from '../utils/errors.js';
+import { redactProfilePath, redactStatusProfile } from '../utils/redact.js';
 import { ok } from '../utils/result.js';
 
 const ACTIONS = ['status', 'profiles', 'version', 'connect', 'disconnect'] as const;
@@ -70,9 +71,17 @@ export const browserTool = defineTool({
 
     switch (action) {
       case 'status':
-        return ok(action, await session.status());
+        return ok(action, redactStatusProfile(await session.status()));
       case 'profiles':
-        return ok(action, { candidates: await session.profiles() });
+        return ok(action, {
+          // Profile paths embed the OS username; redact before the tool answer.
+          candidates: (await session.profiles()).map((candidate) => ({
+            ...candidate,
+            ...(candidate.profilePath === undefined
+              ? {}
+              : { profilePath: redactProfilePath(candidate.profilePath) }),
+          })),
+        });
       case 'version':
         return ok(action, await session.version());
       case 'connect':
