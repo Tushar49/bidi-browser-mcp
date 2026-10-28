@@ -13,10 +13,12 @@ import type {
   Config,
   ConnectionRuntimeLike,
   DiscoveryCandidate,
+  PageSnapshot,
   SessionManagerLike,
   SessionStatus,
 } from '../types.js';
 import { ActionableError, formatError } from '../utils/errors.js';
+import { verifySnapshotElement } from '../snapshot/uid-verify.js';
 
 interface PersistedSession {
   sessionId: string;
@@ -177,6 +179,19 @@ export class SessionManager implements SessionManagerLike {
       serverVersion: this.#serverVersion,
       ...(browserVersion === undefined ? {} : { browserVersion }),
     };
+  }
+
+  /**
+   * Re-resolve a snapshot uid in the live page before dispatching input
+   * commands (plan §3). Silent when the element still matches; otherwise the
+   * mapped actionable error (UID_NOT_FOUND / ELEMENT_NOT_FOUND / STALE_UID).
+   */
+  async verifyElement(snapshot: PageSnapshot, uid: string): Promise<void> {
+    await verifySnapshotElement(
+      (method, params) => this.request(method, params),
+      snapshot,
+      uid
+    );
   }
 
   async #connectOnce(): Promise<SessionStatus> {

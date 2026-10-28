@@ -189,6 +189,12 @@ export interface SessionManagerLike {
     method: string,
     params?: Record<string, unknown>
   ): Promise<Record<string, unknown>>;
+  /**
+   * Re-resolve a snapshot uid in the live page before dispatching input
+   * commands (plan §3). Silent on a match; otherwise throws
+   * UID_NOT_FOUND / ELEMENT_NOT_FOUND / STALE_UID.
+   */
+  verifyElement(snapshot: PageSnapshot, uid: string): Promise<void>;
   /** Present while a session is live; undefined after disconnect. */
   readonly runtime?: ConnectionRuntimeLike;
 }
@@ -307,6 +313,10 @@ export interface ElementInfo {
   readonly role: string;
   readonly name: string;
   readonly tag: string;
+  /**
+   * Size and position as [x, y, width, height] in document-space
+   * coordinates (rect + the frame's scroll offsets at traverse time).
+   */
   readonly bounds: readonly [number, number, number, number];
   /** CSS path within its document or shadow root. */
   readonly selector: string;

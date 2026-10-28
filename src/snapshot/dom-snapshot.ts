@@ -151,11 +151,20 @@ const SNAPSHOT_SCRIPT = String.raw`
       const role = roleOf(el);
       const rect = el.getBoundingClientRect();
       const states = statesOf(el, doc);
+      // Document-space coordinates: the traversal and uid verification (plan
+      // §3) both add the frame's scroll offsets, so scrolling never makes a
+      // uid look stale.
+      const view = doc.defaultView;
       const info = {
         role: role,
         name: nameOf(el, role),
         tag: el.tagName.toLowerCase(),
-        bounds: [Math.round(rect.x), Math.round(rect.y), Math.round(rect.width), Math.round(rect.height)],
+        bounds: [
+          Math.round(rect.x + (view ? view.pageXOffset || 0 : 0)),
+          Math.round(rect.y + (view ? view.pageYOffset || 0 : 0)),
+          Math.round(rect.width),
+          Math.round(rect.height),
+        ],
         selector: cssPath(el, doc),
       };
       if (frameChain.length > 0) info.frame = frameChain;
