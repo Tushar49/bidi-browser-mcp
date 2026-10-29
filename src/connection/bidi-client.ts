@@ -31,13 +31,19 @@ export interface BiDiClientOptions {
 
 /**
  * Translate a BiDi error frame into our taxonomy (decisions §1 of the 0.2.0
- * plan). Only unambiguous flat codes map; everything unknown stays
- * SESSION_FAILED with the raw code preserved in details.biDiCode. Codes are
- * additive for 0.1.x clients.
+ * plan). Only unambiguous cases map; everything unknown stays SESSION_FAILED
+ * with the raw code preserved in details.biDiCode. Codes are additive for
+ * 0.1.x clients.
+ *
+ * Method-aware step (verified live on Firefox/Zen): the browser reports both
+ * an unknown browsing context and a missing frame as `no such frame`. Agent
+ * taxonomy wants the distinction: browsingContext.* → CONTEXT_NOT_FOUND
+ * ("no such tab/context"), script/frame-context scopes → FRAME_NOT_FOUND.
  */
 export function translateBiDiError(
   biDiCode: string | undefined,
-  errorMessage: string | undefined
+  errorMessage: string | undefined,
+  method?: string
 ): ActionableErrorCode {
   if (
     biDiCode === 'session not created' ||
@@ -46,9 +52,12 @@ export function translateBiDiError(
   ) {
     return 'SESSION_BUSY';
   }
+  if (biDiCode === 'no such frame') {
+    return method?.startsWith('browsingContext.') === true
+      ? 'CONTEXT_NOT_FOUND'
+      : 'FRAME_NOT_FOUND';
+  }
   switch (biDiCode) {
-    case 'no such frame':
-      return 'FRAME_NOT_FOUND';
     case 'no such element':
     case 'no such node':
     case 'detached shadow root':
@@ -408,7 +417,7 @@ export class BiDiClient {
           : undefined;
     // Real Firefox/Zen reports the one-session conflict as
     // `session not created` / "Maximum number of active sessions".
-    const code = translateBiDiError(biDiCode, errorMessage);
+    const code = translateBiDiError(biDiCode, errorMessage, pending.method);
 
     pending.reject(
       new ActionableError(

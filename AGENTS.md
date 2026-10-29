@@ -163,6 +163,32 @@ Never:
 6. No heavy deps — `ws` + `@modelcontextprotocol/sdk` only.
 7. Integration/benchmark tests never run in CI (need a live browser).
 
+## Live browser testing
+
+Any test that needs a real Firefox/Zen endpoint uses the throwaway instance,
+never the user's live browser. It is launched and closed within the same task:
+no browser process or profile may outlive the task that started it.
+
+```powershell
+# Start the disposable instance (idempotent: prints the ws:// URL if up).
+pwsh -File _archive/development/launch_zen.ps1 -Start
+
+# …run the live checks against ws://127.0.0.1:9444/session…
+
+# Stop it and remove the disposable profile (default path only).
+pwsh -File _archive/development/launch_zen.ps1 -Stop
+```
+
+- `-Start` and `-Stop` are mandatory one-of; passing both (or both with the
+  profile running) stops the instance.
+- `-Path` overrides the profile (default: `D:/development/temp/browser-data/Zen/live-profile`);
+  a custom path outside that root is never deleted.
+- Stop matches processes by that profile path in the command line, so the
+  user's real Zen and any other instance are never closed or restarted.
+- The same lifecycle is expected from live-check scripts: connect, run,
+  `session.end`, close — an abrupt crash leaves a phantom BiDi session that
+  only a browser restart clears.
+
 ## Packaging rules
 
 The npm tarball is **runtime-only**. `package.json` uses an allowlist:

@@ -91,6 +91,14 @@ describe('BiDiClient malformed-frame handling', () => {
 describe('translateBiDiError (plan decisions §1)', () => {
   it('maps only the unambiguous flat codes', () => {
     expect(translateBiDiError('no such frame', undefined)).toBe('FRAME_NOT_FOUND');
+    // Firefox reports an unknown browsing context as `no such frame`; the
+    // method decides the taxonomy (decisions §1, verified live).
+    expect(translateBiDiError('no such frame', undefined, 'browsingContext.close')).toBe(
+      'CONTEXT_NOT_FOUND'
+    );
+    expect(translateBiDiError('no such frame', undefined, 'script.callFunction')).toBe(
+      'FRAME_NOT_FOUND'
+    );
     expect(translateBiDiError('no such element', undefined)).toBe('STALE_UID');
     expect(translateBiDiError('no such node', undefined)).toBe('STALE_UID');
     expect(translateBiDiError('detached shadow root', undefined)).toBe('STALE_UID');
@@ -128,6 +136,44 @@ describe('BiDiClient failure details (plan decisions §1)', () => {
     const url = await server.start();
 
     let release: (() => void) | undefined;
+    server.on('script.callFunction', () => {
+      return new Promise<Record<string, unknown>>((resolve) => {
+        release = () => resolve({});
+      });
+    });
+
+    const client = new BiDiClient({ url, timeoutMs: 5_000 });
+    await client.connect();
+    const mock = server;
+    try {
+      const pending = client.request('script.callFunction', {});
+      await vi.waitFor(() => {
+        expect(mock?.requests.length ?? 0).toBeGreaterThanOrEqual(1);
+      });
+
+      server.sendRawFrame(
+        JSON.stringify({ type: 'error', id: 1, error: 'no such frame', message: 'No such frame' })
+      );
+
+      await expect(pending).rejects.toMatchObject({
+        // Not a browsingContext.* method, so the frame code stays.
+        code: 'FRAME_NOT_FOUND',
+        details: {
+          method: 'script.callFunction',
+          biDiCode: 'no such frame',
+        },
+      });
+    } finally {
+      release?.();
+      await client.close();
+    }
+  });
+
+  it('maps no such frame from browsingContext methods to CONTEXT_NOT_FOUND', async () => {
+    server = new MockBiDiServer();
+    const url = await server.start();
+
+    let release: (() => void) | undefined;
     server.on('browsingContext.getTree', () => {
       return new Promise<Record<string, unknown>>((resolve) => {
         release = () => resolve({ contexts: [] });
@@ -144,11 +190,11 @@ describe('BiDiClient failure details (plan decisions §1)', () => {
       });
 
       server.sendRawFrame(
-        JSON.stringify({ type: 'error', id: 1, error: 'no such frame', message: 'No such frame' })
+        JSON.stringify({ type: 'error', id: 1, error: 'no such frame', message: 'Browsing Context with id deadbeef not found' })
       );
 
       await expect(pending).rejects.toMatchObject({
-        code: 'FRAME_NOT_FOUND',
+        code: 'CONTEXT_NOT_FOUND',
         details: {
           method: 'browsingContext.getTree',
           biDiCode: 'no such frame',
