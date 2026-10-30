@@ -2,6 +2,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { homedir, platform } from 'node:os';
 import { join, resolve } from 'node:path';
 import { execFile } from 'node:child_process';
+import { request as httpRequest } from 'node:http';
 import { promisify } from 'node:util';
 import type { Config, DiscoveryCandidate, DiscoverySource } from '../types.js';
 import { ActionableError } from '../utils/errors.js';
@@ -440,6 +441,43 @@ function portCandidates(
 }
 
 /**
+ * Cheap CDP liveness confirm: a `DevToolsActivePort`-recorded port is only
+ * excluded from BiDi port probes while a Chromium actually answers there.
+ * A dead profile's recorded port must not shadow a Firefox listening on the
+ * same port (0.2.0 leftover §6). Plain node:http — undici's fetch has
+ * proven flaky to loopback servers inside worker threads.
+ */
+export async function chromiumPortLive(port: number, timeoutMs = 1500): Promise<boolean> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (live: boolean): void => {
+      if (!settled) {
+        settled = true;
+        request.destroy();
+        resolve(live);
+      }
+    };
+    const request = httpRequest(
+      { host: '127.0.0.1', port, path: '/json/version', method: 'GET', timeout: timeoutMs },
+      (response) => {
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk: Buffer) => chunks.push(chunk));
+        response.on('end', () => {
+          // The version payload always carries "Browser"; a random HTTP
+          // server on the same port must not suppress the probe.
+          const body = Buffer.concat(chunks).toString('utf8').slice(0, 4096);
+          finish(response.statusCode === 200 && body.includes('"Browser"'));
+        });
+        response.on('error', () => finish(false));
+      }
+    );
+    request.on('timeout', () => finish(false));
+    request.on('error', () => finish(false));
+    request.end();
+  });
+}
+
+/**
  * Return discovery candidates without probing them. Callers must verify the
  * endpoint themselves before using it.
  */
@@ -524,7 +562,16 @@ export async function discoverBrowsers(config: Config): Promise<
     chromiumPorts.add(port);
   }
 
-  for (const candidate of portCandidates(config, chromiumPorts)) {
+  // Only live Chromium ports suppress BiDi probes; a dead profile's recorded
+  // port must not shadow a Firefox that listens there (§6).
+  const liveChromiumPorts = new Set<number>();
+  for (const port of chromiumPorts) {
+    if (await chromiumPortLive(port)) {
+      liveChromiumPorts.add(port);
+    }
+  }
+
+  for (const candidate of portCandidates(config, liveChromiumPorts)) {
     addEndpoint(candidate.endpoint, candidate.source, candidate);
   }
 

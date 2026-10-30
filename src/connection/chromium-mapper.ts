@@ -194,6 +194,15 @@ export class MapperSocket extends EventEmitter implements BiDiSocket {
   #pendingMessages: unknown[] = [];
   static readonly #MAX_PENDING_MESSAGES = 500;
 
+  /** Dropped-message count; surfaced once so startup overload is not silent. */
+  #droppedPending = 0;
+  #overflowWarned = false;
+
+  /** Bounded signal for the silent-drop path (0.2.0 leftover §6). */
+  get droppedPendingMessages(): number {
+    return this.#droppedPending;
+  }
+
   /** Registered by the BidiServer transport wrapper. */
   setCommandHandler(handler: (command: unknown) => Promise<void> | void): void {
     this.#commandHandler = handler;
@@ -210,6 +219,18 @@ export class MapperSocket extends EventEmitter implements BiDiSocket {
       this.#pendingMessages.length < MapperSocket.#MAX_PENDING_MESSAGES
     ) {
       this.#pendingMessages.push(message);
+      return;
+    }
+    if (this.readyState === CONNECTING) {
+      // The cap stays (bounded memory on purpose), but the drop is counted
+      // and warned once — a silently starved startup is undebuggable.
+      this.#droppedPending += 1;
+      if (!this.#overflowWarned) {
+        this.#overflowWarned = true;
+        console.error(
+          `MapperSocket startup buffer overflow: dropped ${this.#droppedPending}+ mapper messages (cap ${MapperSocket.#MAX_PENDING_MESSAGES} stays).`
+        );
+      }
     }
   }
 

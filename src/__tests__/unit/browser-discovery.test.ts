@@ -1,5 +1,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
+import { createServer } from 'node:http';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadConfig } from '../../config.js';
@@ -147,15 +149,42 @@ describe('chromiumEndpointFromDataDir', () => {
     );
   });
 
-  it('excludes a dir-scanned Chromium port from BiDi port probes', async () => {
+  it('excludes a live dir-scanned Chromium port from BiDi port probes', async () => {
+    // Exclusion now requires CDP liveness (§6): serve the version endpoint.
+    const cdp = createServer((_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end('{"Browser":"Chrome/153.0.0.0"}');
+    });
+    await new Promise<void>((resolve, reject) => {
+      cdp.once('error', reject);
+      cdp.listen(0, '127.0.0.1', resolve);
+    });
+    // Ask the OS which port we got, then record it in the fake data dir.
+    const address = cdp.address() as AddressInfo;
+    const dir = dataDirWith(`${address.port}\n/devtools/browser/abc\n`);
+    try {
+      const candidates = await discoverBrowsers(
+        loadConfig({ BIDI_CHROMIUM_DATA_DIR: dir, BIDI_PORT: String(address.port) })
+      );
+      expect(candidates.map((candidate) => candidate.endpoint)).not.toContain(
+        `ws://127.0.0.1:${address.port}/session`
+      );
+    } finally {
+      cdp.closeAllConnections();
+      await new Promise<void>((resolve) => cdp.close(() => resolve()));
+    }
+  }, 20000);
+
+  it('probes a dead dir-scanned Chromium port so a Firefox there is not shadowed', async () => {
+    // No CDP server on this port: the recorded port must stay probeable (§6).
     const dir = dataDirWith('9444\n/devtools/browser/abc\n');
     const candidates = await discoverBrowsers(
       loadConfig({ BIDI_CHROMIUM_DATA_DIR: dir, BIDI_PORT: '9444' })
     );
-    expect(candidates.map((candidate) => candidate.endpoint)).not.toContain(
+    expect(candidates.map((candidate) => candidate.endpoint)).toContain(
       'ws://127.0.0.1:9444/session'
     );
-  });
+  }, 20000);
 
   it('marks BIDI_WS_URL DevTools endpoints as chromium', async () => {
     const candidates = await discoverBrowsers(
