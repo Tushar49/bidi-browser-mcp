@@ -1,5 +1,6 @@
 import type { ElementInfo, PageSnapshot } from '../types.js';
 import { ActionableError } from '../utils/errors.js';
+import { unwrapBiDiValue } from '../utils/bidi-value.js';
 import { resolveElement, resolvePlan } from './element-resolver.js';
 
 /** Same request shape the snapshot builders use. */
@@ -106,34 +107,9 @@ export function verifyFunctionSource(
 })`;
 }
 
-/** Unwrap a BiDi serialized value (and tolerate plain mock payloads). */
-function unwrap(value: unknown): unknown {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-    return value;
-  }
-  const record = value as Record<string, unknown>;
-  if (typeof record.type !== 'string' || !('value' in record)) {
-    return record;
-  }
-  const inner = record.value;
-  if (record.type === 'object' && Array.isArray(inner)) {
-    const result: Record<string, unknown> = {};
-    for (const entry of inner) {
-      if (Array.isArray(entry) && entry.length === 2 && typeof entry[0] === 'string') {
-        result[entry[0]] = unwrap(entry[1]);
-      }
-    }
-    return result;
-  }
-  if (record.type === 'array' && Array.isArray(inner)) {
-    return inner.map((item) => unwrap(item));
-  }
-  return unwrap(inner);
-}
-
 /** Parse a `script.callFunction` result into a probe; bad shapes probe absent. */
 export function parseVerifyProbe(raw: unknown): VerifyProbe {
-  const value = unwrap(raw);
+  const value = unwrapBiDiValue(raw);
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     return { found: false, tag: null, rect: null, matches: 0, reason: 'unparsable result' };
   }
@@ -198,13 +174,26 @@ export async function verifySnapshotElement(
   snapshot: PageSnapshot,
   uid: string
 ): Promise<void> {
-  const element = resolveElement(snapshot, uid);
+  await verifyElementRef(request, resolveElement(snapshot, uid), snapshot.context, uid);
+}
+
+/**
+ * Verify one known element reference (the plan cache path) against the live
+ * page. Same verdicts and precedence as verifySnapshotElement (§3): the plan
+ * is only a resolution hint, verification is the safety.
+ */
+export async function verifyElementRef(
+  request: BiDiRequest,
+  element: ElementInfo,
+  context: string,
+  uid: string
+): Promise<void> {
   const plan = resolvePlan(element);
   let result: Record<string, unknown>;
   try {
     result = await request('script.callFunction', {
       functionDeclaration: verifyFunctionSource(plan),
-      target: { context: snapshot.context },
+      target: { context },
       awaitPromise: false,
     });
   } catch (error) {
@@ -214,7 +203,7 @@ export async function verifySnapshotElement(
     throw new ActionableError(
       'SCRIPT_ERROR',
       'Failed to run the uid verification script.',
-      { cause: error, details: { context: snapshot.context, uid } }
+      { cause: error, details: { context, uid } }
     );
   }
 

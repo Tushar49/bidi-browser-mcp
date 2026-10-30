@@ -100,4 +100,69 @@ describe('page tool (live session via mock)', () => {
 
     expect(server.requests.filter((request) => request.method === 'script.evaluate')).toHaveLength(2);
   });
+
+  it('navigates with the requested wait and drops the stale snapshot', async () => {
+    server = new MockBiDiServer();
+    server.on('script.evaluate', () => ({ type: 'success', result: { type: 'string', value: FIXTURE_JSON } }));
+    server.on('browsingContext.navigate', (params) => {
+      // The friendly wait name maps onto BiDi's enum (§5).
+      expect(params.wait).toBe('complete');
+      return { navigation: 'nav-1', url: params.url };
+    });
+    ctx = await makeContext(server);
+
+    await pageTool.handler({ action: 'snapshot' }, ctx);
+    const result = await pageTool.handler(
+      { action: 'navigate', url: 'https://example.test/next', wait: 'load' },
+      ctx
+    );
+    expect(result.data).toMatchObject({
+      url: 'https://example.test/next',
+      navigation: 'nav-1',
+      wait: 'load',
+    });
+
+    const nav = server.requests.find((request) => request.method === 'browsingContext.navigate');
+    expect(nav?.params).toMatchObject({ context: 'mock-context', wait: 'complete' });
+
+    // The cached snapshot described the old document (§5).
+    expect(ctx.session?.runtime?.snapshots.get('mock-context')).toBeUndefined();
+  });
+
+  it('defaults the wait milestone to domContentLoaded', async () => {
+    server = new MockBiDiServer();
+    server.on('browsingContext.navigate', (params) => {
+      expect(params.wait).toBe('interactive');
+      return { navigation: 'nav-2', url: params.url };
+    });
+    ctx = await makeContext(server);
+
+    const result = await pageTool.handler({ action: 'navigate', url: 'https://example.test/' }, ctx);
+    expect(result.data).toMatchObject({ wait: 'domContentLoaded' });
+  });
+
+  it('maps navigation failures to NAVIGATION_FAILED', async () => {
+    server = new MockBiDiServer();
+    server.on('browsingContext.navigate', () => {
+      throw new Error('Address unavailable');
+    });
+    ctx = await makeContext(server);
+
+    await expect(
+      pageTool.handler({ action: 'navigate', url: 'https://unreachable.test/' }, ctx)
+    ).rejects.toMatchObject({
+      code: 'NAVIGATION_FAILED',
+      message: expect.stringContaining('https://unreachable.test/'),
+    });
+  });
+
+  it('refuses non-navigable URL schemes', async () => {
+    server = new MockBiDiServer();
+    ctx = await makeContext(server);
+
+    await expect(
+      pageTool.handler({ action: 'navigate', url: 'file:///C:/Windows/system.ini' }, ctx)
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    expect(server.requests.some((request) => request.method === 'browsingContext.navigate')).toBe(false);
+  });
 });

@@ -4,21 +4,23 @@ import {
   discoverBrowsers,
   endpointAllowed,
 } from '../connection/browser-discovery.js';
-import { EventPipeline } from '../connection/event-pipeline.js';
+import { EventPipeline, NETWORK_SUBSCRIBED_EVENTS } from '../connection/event-pipeline.js';
 import { ContextManager } from './context-manager.js';
 import { SnapshotCache } from '../snapshot/cache.js';
+import { resolveElement } from '../snapshot/element-resolver.js';
+import { verifyElementRef } from '../snapshot/uid-verify.js';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
   Config,
   ConnectionRuntimeLike,
   DiscoveryCandidate,
+  ElementInfo,
   PageSnapshot,
   SessionManagerLike,
   SessionStatus,
 } from '../types.js';
 import { ActionableError, formatError } from '../utils/errors.js';
-import { verifySnapshotElement } from '../snapshot/uid-verify.js';
 
 interface PersistedSession {
   sessionId: string;
@@ -78,6 +80,13 @@ export class SessionManager implements SessionManagerLike {
   #profile?: string;
   #connecting?: Promise<SessionStatus>;
   #runtime?: ConnectionRuntimeLike;
+  /**
+   * uid → element plans per context, indexed on every snapshot set. Interact
+   * consults these when the snapshot cache was invalidated by a previous
+   * dispatch: the plan is only a resolution hint, and live verification
+   * (§3) still guards every dispatch.
+   */
+  readonly #plans = new Map<string, Map<string, ElementInfo>>();
 
   /** Live-session services (events, contexts); undefined when disconnected. */
   get runtime(): ConnectionRuntimeLike | undefined {
@@ -87,6 +96,19 @@ export class SessionManager implements SessionManagerLike {
   constructor(options: SessionManagerOptions) {
     this.#config = options.config;
     this.#serverVersion = options.serverVersion;
+  }
+
+  /** The recorded plan for a uid, even after the snapshot cache was dropped. */
+  planFor(context: string, uid: string): ElementInfo | undefined {
+    return this.#plans.get(context)?.get(uid);
+  }
+
+  #indexPlans(snapshot: PageSnapshot): void {
+    const plans = new Map<string, ElementInfo>();
+    for (const element of snapshot.elements) {
+      plans.set(element.uid, element);
+    }
+    this.#plans.set(snapshot.context, plans);
   }
 
   async connect(): Promise<SessionStatus> {
@@ -187,11 +209,21 @@ export class SessionManager implements SessionManagerLike {
    * mapped actionable error (UID_NOT_FOUND / ELEMENT_NOT_FOUND / STALE_UID).
    */
   async verifyElement(snapshot: PageSnapshot, uid: string): Promise<void> {
-    await verifySnapshotElement(
+    await verifyElementRef(
       (method, params) => this.request(method, params),
-      snapshot,
+      resolveElement(snapshot, uid),
+      snapshot.context,
       uid
     );
+  }
+
+  /**
+   * Verify a known element plan against the live page in the given context
+   * (interact's plan-cache fallback). Same verdicts as verifyElement (§3):
+   * the plan is only a resolution hint, verification is the safety.
+   */
+  async verifyElementPlan(element: ElementInfo, context: string, uid: string): Promise<void> {
+    await verifyElementRef((method, params) => this.request(method, params), element, context, uid);
   }
 
   async #connectOnce(): Promise<SessionStatus> {
@@ -292,13 +324,19 @@ export class SessionManager implements SessionManagerLike {
 
         const pipeline = new EventPipeline();
         const contexts = new ContextManager(client);
-        const snapshots = new SnapshotCache();
-        pipeline.registerSink((event) => {
+        const snapshots = new SnapshotCache((snapshot) => this.#indexPlans(snapshot));        pipeline.registerSink((event) => {
           contexts.handleEvent(event);
           snapshots.handleEvent(event);
         });
         try {
           await pipeline.attach(client);
+          if (this.#config.enableNetwork) {
+            // Network waits match traffic buffered since the subscription
+            // point, so subscribing at connect (not first wait) makes the
+            // common trigger-then-wait flow work. Failure here is fine — the
+            // tool re-subscribes and surfaces the error when actually used.
+            await pipeline.addSubscription(NETWORK_SUBSCRIBED_EVENTS).catch(() => undefined);
+          }
           await contexts.sync();
         } catch (error) {
           // The session exists but the session services failed: end it so it

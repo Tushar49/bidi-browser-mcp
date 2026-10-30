@@ -20,6 +20,17 @@ export const SUBSCRIBED_EVENTS = [
   'log.entryAdded',
 ] as const;
 
+/**
+ * Network events (0.2.0): subscribed additively when the opt-in network tool
+ * first runs — the base subscription stays small until someone needs them.
+ */
+export const NETWORK_SUBSCRIBED_EVENTS = [
+  'network.beforeRequestSent',
+  'network.responseStarted',
+  'network.responseCompleted',
+  'network.fetchError',
+] as const;
+
 const DEFAULT_BUFFER_LIMIT = 200;
 
 export interface EventPipelineOptions {
@@ -30,18 +41,26 @@ export interface EventPipelineOptions {
 type Sink = (event: BiDiEvent) => void;
 
 /**
- * Routes BiDi events to sinks and keeps bounded per-method buffers.
- * One `session.subscribe` for the lifetime of the session.
+ * Routes BiDi events to sinks and keeps bounded per-method buffers. One
+ * `session.subscribe` at attach; additive subscriptions can be appended
+ * mid-session (network gate) and are tracked like the base set.
  */
 export class EventPipeline implements EventPipelineLike {
   readonly #bufferLimit: number;
   readonly #buffers = new Map<string, EventRecord[]>();
   readonly #dropped = new Map<string, number>();
   readonly #sinks = new Set<Sink>();
+  readonly #subscribed = new Set<string>();
   #offClient?: () => void;
+  #client?: BiDiClientLike;
 
   constructor(options: EventPipelineOptions = {}) {
     this.#bufferLimit = options.bufferLimitPerMethod ?? DEFAULT_BUFFER_LIMIT;
+    // The base set is declared up front so stats are honest before attach;
+    // attach sends exactly these methods to the browser.
+    for (const method of SUBSCRIBED_EVENTS) {
+      this.#subscribed.add(method);
+    }
   }
 
   /**
@@ -53,10 +72,36 @@ export class EventPipeline implements EventPipelineLike {
       return;
     }
 
+    this.#client = client;
     await client.request('session.subscribe', { events: [...SUBSCRIBED_EVENTS] });
+    for (const method of SUBSCRIBED_EVENTS) {
+      this.#subscribed.add(method);
+    }
     this.#offClient = client.onEvent((event) => {
       this.#route(event);
     });
+  }
+
+  /**
+   * Add a second, additive subscription mid-session (0.2.0 network gate).
+   * Idempotent per pipeline instance; methods already subscribed are skipped.
+   */
+  async addSubscription(events: readonly string[]): Promise<void> {
+    const fresh = events.filter((method) => !this.#subscribed.has(method));
+    if (fresh.length === 0) {
+      return;
+    }
+    if (this.#client !== undefined) {
+      await this.#client.request('session.subscribe', { events: fresh });
+    }
+    for (const method of fresh) {
+      this.#subscribed.add(method);
+    }
+  }
+
+  /** Methods this pipeline currently subscribes to (base + additive). */
+  subscribedMethods(): readonly string[] {
+    return [...this.#subscribed];
   }
 
   registerSink(sink: Sink): () => void {
@@ -190,7 +235,7 @@ export class EventPipeline implements EventPipelineLike {
     for (const [method, count] of this.#dropped) {
       dropped[method] = count;
     }
-    return { subscribed: [...SUBSCRIBED_EVENTS], buffered, dropped };
+    return { subscribed: this.subscribedMethods(), buffered, dropped };
   }
 
   detach(): void {

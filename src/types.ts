@@ -21,6 +21,10 @@ export interface Config {
   readonly allowExtensionInstall: boolean;
   readonly allowBrowserClose: boolean;
   readonly allowRemote: boolean;
+  /** BIDI_ENABLE_NETWORK: the network wait tool is active. */
+  readonly enableNetwork: boolean;
+  /** BIDI_ALLOW_SCRIPT_EVAL: free-form script.evaluate is allowed. */
+  readonly allowScriptEval: boolean;
   readonly discoveryRoots: readonly string[];
   /** Chromium user-data dirs to look for a `DevToolsActivePort` file in. */
   readonly chromiumDataDirs: readonly string[];
@@ -195,6 +199,10 @@ export interface SessionManagerLike {
    * UID_NOT_FOUND / ELEMENT_NOT_FOUND / STALE_UID.
    */
   verifyElement(snapshot: PageSnapshot, uid: string): Promise<void>;
+  /** The recorded uid→element plan, even after the snapshot cache dropped. */
+  planFor(context: string, uid: string): ElementInfo | undefined;
+  /** Verify one known element plan against the live page (§3 verdicts). */
+  verifyElementPlan(element: ElementInfo, context: string, uid: string): Promise<void>;
   /** Present while a session is live; undefined after disconnect. */
   readonly runtime?: ConnectionRuntimeLike;
 }
@@ -277,6 +285,13 @@ export interface EventPipelineLike {
   record(event: BiDiEvent): void;
   /** Return buffered events matching the filter; optionally drain them. */
   events(filter?: EventFilter): readonly EventRecord[];
+  /**
+   * Add an additive mid-session subscription (network gate). Idempotent:
+   * already-subscribed methods are skipped.
+   */
+  addSubscription(events: readonly string[]): Promise<void>;
+  /** Methods this pipeline currently subscribes to (base + additive). */
+  subscribedMethods(): readonly string[];
   /** Buffered console entries mapped from log.eventAdded frames. */
   consoleEntries(filter?: {
     level?: string;

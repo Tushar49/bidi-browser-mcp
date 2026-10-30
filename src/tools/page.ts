@@ -1,11 +1,12 @@
 import type { Config, JsonSchema, PageSnapshot, ServerContext } from '../types.js';
 import { COMMON_PARAMS, defineTool, requireAction } from './base-tool.js';
 import { ActionableError, toContextError } from '../utils/errors.js';
+import { assertNavigableUrl } from '../utils/assert.js';
 import { ok } from '../utils/result.js';
 import { buildSnapshot } from '../snapshot/dom-snapshot.js';
 import { fitToBudget } from '../snapshot/token-optimizer.js';
 
-const ACTIONS = ['snapshot', 'content'] as const;
+const ACTIONS = ['snapshot', 'content', 'navigate'] as const;
 
 const INPUT_SCHEMA: JsonSchema = {
   type: 'object',
@@ -14,13 +15,22 @@ const INPUT_SCHEMA: JsonSchema = {
       type: 'string',
       enum: [...ACTIONS],
       description:
-        'snapshot: interactive element map with uids (or text mode); content: readable page text',
+        'snapshot: interactive element map with uids (or text mode); content: readable page text; navigate: go to a URL, optionally waiting for a load milestone',
     },
     context: COMMON_PARAMS.context,
     mode: {
       type: 'string',
       enum: ['interactive', 'text'],
       description: 'snapshot mode. Default interactive (element map).',
+    },
+    url: {
+      type: 'string',
+      description: 'URL for page.navigate. Only http:, https:, and about:blank are allowed.',
+    },
+    wait: {
+      type: 'string',
+      enum: ['none', 'domContentLoaded', 'load'],
+      description: 'page.navigate milestone to wait for. Default domContentLoaded.',
     },
     refresh: {
       type: 'boolean',
@@ -118,6 +128,54 @@ export const pageTool = defineTool({
     const context = await runtime.contexts.ensureContext(
       typeof args.context === 'string' ? args.context : undefined
     );
+
+    if (action === 'navigate') {
+      const url =
+        args.url === undefined ? undefined : assertNavigableUrl(args.url, 'page.navigate url');
+      if (url === undefined) {
+        throw new ActionableError('INVALID_ARGUMENT', 'page.navigate requires url.', {
+          fix: 'Pass an http:, https:, or about:blank URL.',
+        });
+      }
+      const wait = args.wait === 'none' || args.wait === 'load' ? args.wait : 'domContentLoaded';
+      // BiDi's wait enum is none|interactive|complete; the friendly schema
+      // names map onto it (domContentLoaded ≙ interactive, load ≙ complete).
+      const waitValue = wait === 'load' ? 'complete' : wait === 'none' ? 'none' : 'interactive';
+      try {
+        const navigated = await session.request('browsingContext.navigate', {
+          context,
+          url,
+          wait: waitValue,
+        });
+        // The cached snapshot described the old document: drop it (§5).
+        runtime.snapshots.invalidate(context);
+        return ok(action, {
+          url,
+          navigation:
+            navigated.navigation === undefined || navigated.navigation === null
+              ? null
+              : String(navigated.navigation),
+          wait,
+        });
+      } catch (error) {
+        // Navigation failures get the dedicated code (decisions §5) while the
+        // BiDi code and method survive in details for diagnosis.
+        if (error instanceof ActionableError && error.code === 'NAVIGATION_FAILED') {
+          throw error;
+        }
+        const cause = toContextError(error);
+        throw new ActionableError(
+          'NAVIGATION_FAILED',
+          `Navigation to ${url} failed: ${cause.message}`,
+          {
+            fix: 'Check that the URL is reachable and the scheme is allowed, then retry.',
+            cause,
+            details: { url, wait, ...(cause.details ?? {}) },
+          }
+        );
+      }
+    }
+
     const refresh = args.refresh === true;
 
     if (action === 'content') {

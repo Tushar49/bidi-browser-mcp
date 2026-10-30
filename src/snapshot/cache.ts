@@ -4,9 +4,17 @@ import type { BiDiEvent, PageSnapshot, SnapshotCacheLike } from '../types.js';
  * Per-context snapshot cache. Entries live until the page navigates
  * (domContentLoaded), the context closes, or the session ends — the browser
  * tree and page events are the source of truth, so there is no TTL.
+ * @param onSet Optional hook fired on every set; the session manager uses it
+ *   to keep its uid→plan index current (interact needs plans after
+ *   invalidation, and verification provides the staleness safety).
  */
 export class SnapshotCache implements SnapshotCacheLike {
   readonly #entries = new Map<string, PageSnapshot>();
+  readonly #onSet?: (snapshot: PageSnapshot) => void;
+
+  constructor(onSet?: (snapshot: PageSnapshot) => void) {
+    this.#onSet = onSet;
+  }
 
   get(context: string): PageSnapshot | undefined {
     return this.#entries.get(context);
@@ -14,6 +22,7 @@ export class SnapshotCache implements SnapshotCacheLike {
 
   set(snapshot: PageSnapshot): void {
     this.#entries.set(snapshot.context, snapshot);
+    this.#onSet?.(snapshot);
   }
 
   invalidate(context: string): void {

@@ -55,6 +55,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     allowExtensionInstall: readBoolean(env, 'BIDI_ALLOW_EXTENSION_INSTALL', false),
     allowBrowserClose: readBoolean(env, 'BIDI_ALLOW_BROWSER_CLOSE', false),
     allowRemote,
+    /** Opt-in for the read-only network waits (0.2.0 gate). */
+    enableNetwork: readBoolean(env, 'BIDI_ENABLE_NETWORK', false),
+    /** Opt-in for free-form script.evaluate (credential-unsafe). */
+    allowScriptEval: readBoolean(env, 'BIDI_ALLOW_SCRIPT_EVAL', false),
     discoveryRoots: Object.freeze(discoveryRoots),
     chromiumDataDirs: Object.freeze(chromiumDataDirs),
   });
