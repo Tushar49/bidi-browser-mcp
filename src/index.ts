@@ -16,8 +16,11 @@ import { browserTool } from './tools/browser.js';
 import { cleanupTool } from './tools/cleanup.js';
 import { consoleTool } from './tools/console.js';
 import { contextTool } from './tools/context.js';
+import { interactTool } from './tools/interact.js';
+import { networkTool } from './tools/network.js';
 import { observeTool } from './tools/observe.js';
 import { pageTool } from './tools/page.js';
+import { scriptTool } from './tools/script.js';
 import { spacesTool } from './tools/spaces.js';
 import { pingTool } from './tools/ping.js';
 import { tabsTool } from './tools/tabs.js';
@@ -67,6 +70,9 @@ export function createServer(options: CreateServerOptions = {}): {
   registry.register(observeTool);
   registry.register(cleanupTool);
   registry.register(pageTool);
+  registry.register(interactTool);
+  registry.register(networkTool);
+  registry.register(scriptTool);
   registry.register(contextTool);
   registry.register(spacesTool);
 
