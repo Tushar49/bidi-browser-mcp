@@ -132,8 +132,11 @@ if ($action -eq 'Start') {
     New-Item -ItemType Directory -Force -Path $ProfilePath | Out-Null
   }
 
-  $arguments = @('-no-remote', '--profile', $ProfilePath, "--remote-debugging-port=$AgentPort")
-  Start-Process -FilePath $ZenExe -ArgumentList $arguments -WindowStyle Minimized
+  $arguments = @('-no-remote', '--profile', $ProfilePath, "--remote-debugging-port=$AgentPort", '--headless', '--window-size=1400,900')
+  # Headless on purpose: headed Zen in this environment opens a 0×0 content
+  # window (layout renders, but elementFromPoint returns null and window
+  # commands hang). Headless honors --window-size and paints a real viewport.
+  Start-Process -FilePath $ZenExe -ArgumentList $arguments -WindowStyle Hidden
 
   $deadline = (Get-Date).AddSeconds($StartTimeoutSeconds)
   while ((Get-Date) -lt $deadline) {

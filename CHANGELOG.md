@@ -2,6 +2,52 @@
 
 All notable changes to BiDi Browser MCP Server will be documented in this file.
 
+## [Unreleased] — 0.2.0 work in progress
+
+### Added
+- **`interact` tool** — act on snapshot uids: click, type, clear, press,
+  check, select, scroll, upload. Every action re-verifies the uid in the live
+  page before dispatch (`ELEMENT_NOT_FOUND` / `STALE_UID`); clicks hit-test
+  and refuse covered targets (`NOT_INTERACTABLE` names the coverer, with
+  boundary-specific fix text for iframe and shadow/slot crossings); key input
+  uses WebDriver private-use code points (Firefox rejects named keys); input
+  state is released after every dispatch, and the snapshot cache is dropped
+  so post-action state is never stale. Chained actions reuse the recorded
+  uid→plan (verification stays the safety) and need no re-snapshot. Verified
+  against Zen/Firefox 158 and Brave 153 through the chromium-bidi mapper,
+  including same-origin iframe clicks, shadow-root click/scroll, and
+  `input.setFiles` on visible and hidden file inputs.
+- **`page.navigate`** with `wait: none | domContentLoaded | load` (mapped onto
+  BiDi's `none|interactive|complete`); failures map to `NAVIGATION_FAILED`
+  and every navigation drops the context's snapshot cache.
+- **`script` tool** — `waitFor` polls the condition with short
+  `script.callFunction` calls (250 ms interval, 120 s cap; syntax errors and
+  thrown conditions surface immediately as `SCRIPT_ERROR` instead of a
+  falsy-deadline timeout) and `evaluate`, gated by `BIDI_ALLOW_SCRIPT_EVAL=1`
+  (the tool stays visible; the refusal names the flag; tool-internal scripts
+  used by `interact` and verification are exempt).
+- **`network` tool** (`BIDI_TOOLSET=network` or `devtools`) — read-only waits
+  for request/response metadata (`until: request|response`, `method`,
+  `urlPattern` substring filter). Requires `BIDI_ENABLE_NETWORK=1`; the
+  subscription starts at session connect so trigger-then-wait flows still
+  match buffered events. Metadata only — no bodies, no interception.
+- Chromium discovery now confirms CDP liveness before a
+  `DevToolsActivePort`-recorded port suppresses BiDi port probes, so a dead
+  profile's recorded port can no longer shadow a Firefox listening there.
+- MapperSocket startup-buffer overflow (500-message cap unchanged) is counted
+  and warned once instead of dropping silently.
+
+### Changed
+- **New error codes are additive** for 0.1.x clients: `FRAME_NOT_FOUND`,
+  `ELEMENT_NOT_FOUND`, `NOT_INTERACTABLE`, `STALE_UID`, `NAVIGATION_FAILED`
+  join the taxonomy from Wave 0 (`UID_NOT_FOUND` already shipped in 0.1.9).
+- Shared BiDi value unwrapper (`unwrapBiDiValue`) handles `null`, `undefined`,
+  and `node` references (`sharedId`/`internalId` preserved for
+  `input.setFiles`).
+- The throwaway live-test launcher (`_archive`, dev-only) runs headless with
+  an explicit window size: headed Zen opened a 0×0 content window in this
+  environment, where `elementFromPoint` returns null and window commands hang.
+
 ## [0.1.10] - 2026-10-27
 
 ### Fixed

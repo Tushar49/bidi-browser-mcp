@@ -45,15 +45,28 @@ WebSocket. Your logins, cookies, extensions, and containers stay intact.
 
 ## Tool surface
 
-Nine tools ship today (`core`): `ping` · `browser` · `tabs` · `page` ·
-`console` · `observe` · `context` · `spaces` · `cleanup`.
+Nine tools in `core`, plus `network` (visible with `BIDI_TOOLSET=network` or
+`devtools`): `ping` · `browser` · `tabs` · `page` · `interact` · `console` ·
+`observe` · `context` · `spaces` · `cleanup` · `script` · `network`.
 
-Next (0.2.0) — the automation loop:
-
-- `interact` — click, type, clear, press, select, check, upload, scroll
-- `page.navigate` with `wait: none | domContentLoaded | load`
-- `network` (opt-in, read-only): wait for request/response metadata
-- gated `script.evaluate`
+- `page` — snapshot (uid element map), readable text, and `navigate`
+  (`wait: none | domContentLoaded | load`; failures map to
+  `NAVIGATION_FAILED`).
+- `interact` — act on snapshot uids: `click` `type` `clear` `press` `check`
+  `select` `scroll` `upload`. Every action re-verifies the uid against the
+  live page first (`ELEMENT_NOT_FOUND` / `STALE_UID` when the page moved on);
+  clicks hit-test and refuse covered targets with `NOT_INTERACTABLE` (iframe
+  and shadow crossings get boundary-specific fix text); input state is always
+  released, and the snapshot cache is dropped after every dispatched action.
+  Read-write: `readOnlyHint: false`, `destructiveHint: true`.
+- `script` — `waitFor` (safe condition polling, 250 ms interval, 120 s cap)
+  and `evaluate` (credential-unsafe; **gated by `BIDI_ALLOW_SCRIPT_EVAL=1`** —
+  the tool stays visible and the refusal names the flag).
+- `network` — read-only waits for request/response metadata
+  (`until: request|response`, `method`, `urlPattern` filter; no bodies, no
+  interception). Requires **`BIDI_ENABLE_NETWORK=1`**; the first subscription
+  starts at session connect, so trigger-then-wait flows still match.
+  `readOnlyHint: true`.
 
 Later — state and environment:
 
@@ -297,6 +310,8 @@ allow flags are reserved for later waves.
 | `BIDI_TEMP_DIR` | `.temp` | Temp file directory — parsed and validated, but no temp files are written yet (reserved for later waves) |
 | `BIDI_ALLOW_EXTENSION_INSTALL` | `false` | Gate extension install |
 | `BIDI_ALLOW_BROWSER_CLOSE` | `false` | Gate `browser.close` |
+| `BIDI_ENABLE_NETWORK` | `false` | Opt-in for `network.wait` (read-only request/response metadata) |
+| `BIDI_ALLOW_SCRIPT_EVAL` | `false` | Opt-in for `script.evaluate` (reads credentials; `script.waitFor` needs no flag) |
 
 ## Safety limits
 

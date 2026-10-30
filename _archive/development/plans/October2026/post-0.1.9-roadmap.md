@@ -135,6 +135,35 @@ below, this section wins.
   scroll a shadow host; covered click through the Chromium mapper; `setFiles`
   on visible vs hidden inputs; flat error shapes for stale elements from the
   mapper (may differ from Firefox — verified per family).
+- **Research matrix results (2026-10-30, live on Zen 1.23b/Firefox 158 and
+  Brave 153.1 via the mapper — both ALL PASS, harnesses in `.temp/`
+  `live-wave1*.mjs`):**
+  - iframe click (same-origin srcdoc): snapshot records the frame chain;
+    dispatch resolves the child context via `window.frameElement.matches`
+    walk over `browsingContext.getTree`, then `input.performActions` into that
+    child context — handler ran in both families.
+  - shadow host scroll + click: plan-based resolution pierces the open shadow
+    root; `cssPath` cannot id-scope inside a shadow root, so selectors fall
+    back to positional paths (`button`) — unique-per-root is what keeps them
+    safe; scrollIntoView and click both landed in both families.
+  - covered click through the mapper: same `NOT_INTERACTABLE` shape naming
+    the coverer (`div#cover`) as Firefox — no raw CDP leakage.
+  - `setFiles` visible/hidden: Firefox requires `multiple` for >1 file
+    (`unable set file input` → `SESSION_FAILED` with the browser message);
+    hidden (display:none) inputs accept `setFiles` fine in both families.
+    Chromium dedupes repeat-serialized nodes to `internalId`-only stubs, so
+    the dispatch wrapper hands the node back under `element` alone (never
+    both `value` and `element`).
+  - stale elements through the mapper: flat mapped codes
+    (`STALE_UID`/`ELEMENT_NOT_FOUND`/`UID_NOT_FOUND`), never raw CDP dumps.
+  - Firefox quirks found live: `input.performActions` key `value` must be a
+    single code point (names rejected) — press maps names → private-use code
+    points; `browsingContext.navigate` `wait` uses `none|interactive|complete`
+    — friendly names map at dispatch; `browsingContext.setViewport` hangs on
+    headed Zen (averted: headless throwaway with `--window-size`).
+  - Network waits: events must be subscribed before traffic is observable —
+    the subscription now starts at session connect (when the gate is on), so
+    trigger-then-wait flows match buffered events in both families.
 
 ### 5. Per-action contracts (Wave 1 acceptance)
 
@@ -168,9 +197,12 @@ below, this section wins.
 ### 6. Deferred leftovers — assigned
 
 - Startup-buffer overflow signal → Wave 1 (mapper files; warn, cap stays).
+  ✅ Done: counted + warned once (`droppedPendingMessages`).
 - Process-name substring matching → Wave 0 (discovery files).
 - Stale `DevToolsActivePort` suppression (cheap CDP liveness confirm) →
   Wave 1 research matrix plus fix.
+  ✅ Done: `chromiumPortLive` (node:http GET `/json/version`, must carry
+  `"Browser"`); dead recorded ports stay probeable.
 - `MapperSocket` export stays; a jsdoc note marks it test-only (Wave 0).
 
 ### 7. Release gates (0.2.0)
