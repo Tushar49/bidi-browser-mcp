@@ -160,6 +160,12 @@ export type BrowserFamily = 'firefox' | 'chromium';
 export interface DiscoveryCandidate {
   readonly endpoint: string;
   readonly source: DiscoverySource;
+  /** Stable short handle for browser.connect target ('f-9223', 'c-9222'). */
+  readonly id?: string;
+  /** Quick TCP probe of the endpoint port — listing only, not a handshake. */
+  readonly reachable?: boolean;
+  /** True when this candidate is the currently connected endpoint. */
+  readonly live?: boolean;
   readonly profilePath?: string;
   readonly processId?: number;
   readonly browserFamily?: BrowserFamily;
@@ -187,6 +193,13 @@ export interface SessionManagerLike {
   profiles(): Promise<readonly DiscoveryCandidate[]>;
   version(): Promise<{ serverVersion: string; browserVersion?: string }>;
   connect(): Promise<SessionStatus>;
+  /**
+   * Connect to a specific discovered browser: candidate id ('f-9444'),
+   * a port ('9444'), or an exact endpoint. Undefined keeps the default
+   * ordered auto-connect. Switching ends the current session first (tabs
+   * stay open — the browser is never closed).
+   */
+  connectTo(target?: string): Promise<SessionStatus>;
   disconnect(): Promise<void>;
   /** Send a BiDi command on the live session. */
   request(

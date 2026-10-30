@@ -13,7 +13,12 @@ const INPUT_SCHEMA: JsonSchema = {
       type: 'string',
       enum: [...ACTIONS],
       description:
-        'status: connection state; profiles: discovery candidates; version: server + browser; connect: attach; disconnect: end session',
+        'status: connection state; profiles: discovery candidates (id, reachable, live); version: server + browser; connect: attach (optionally to a specific candidate); disconnect: end session',
+    },
+    target: {
+      type: 'string',
+      description:
+        "connect: which browser to attach to — candidate id from browser.profiles ('f-9444'), a port ('9444'), or an exact ws endpoint. Omit for ordered auto-connect. Switching ends the current session first (tabs stay open).",
     },
   },
   required: ['action'],
@@ -46,7 +51,7 @@ export const browserTool = defineTool({
   name: 'browser',
   title: 'Browser session',
   description:
-    'Inspect and control the single BiDi session. This never launches, closes, or mutates the user’s browser.',
+    'Inspect and control the single BiDi session. This never launches, closes, or mutates the user’s browser. connect accepts a target (candidate id, port, or endpoint) to pick a specific browser — profiles lists candidates with ids, reachability, and the live one.',
   toolset: 'core',
   actions: ACTIONS,
   inputSchema: INPUT_SCHEMA,
@@ -84,8 +89,10 @@ export const browserTool = defineTool({
         });
       case 'version':
         return ok(action, await session.version());
-      case 'connect':
-        return ok(action, await session.connect());
+      case 'connect': {
+        const target = typeof args.target === 'string' ? args.target : undefined;
+        return ok(action, await session.connectTo(target));
+      }
       case 'disconnect':
         await session.disconnect();
         return ok(action, { connected: false });

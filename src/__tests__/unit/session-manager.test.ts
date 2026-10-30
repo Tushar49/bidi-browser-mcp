@@ -41,6 +41,52 @@ describe('SessionManager', () => {
     expect(profiles[0]).toMatchObject({ endpoint: url, source: 'env' });
   });
 
+  it('profiles enrich candidates with id, reachability, and the live one', async () => {
+    server = new MockBiDiServer();
+    const url = await server.start();
+    const config = loadConfig({ BIDI_WS_URL: url });
+    const manager = new SessionManager({ config, serverVersion: '0.1.6' });
+
+    const before = await manager.profiles();
+    expect(before).toHaveLength(1);
+    expect(before[0]).toMatchObject({ endpoint: url, reachable: true });
+    expect(before[0].id).toMatch(/^f-\d+$/);
+    expect(before[0].live).toBeUndefined();
+
+    await manager.connect();
+    const after = await manager.profiles();
+    expect(after[0]).toMatchObject({ live: true, reachable: true });
+  });
+
+  it('connectTo targets by endpoint and by port, and rejects unknown ids', async () => {
+    server = new MockBiDiServer();
+    const url = await server.start();
+    const config = loadConfig({ BIDI_WS_URL: url });
+    const manager = new SessionManager({ config, serverVersion: '0.1.6' });
+
+    // By exact endpoint.
+    const byEndpoint = await manager.connectTo(url);
+    expect(byEndpoint.connected).toBe(true);
+
+    // Already connected to that target: no reconnect, still fine.
+    const again = await manager.connectTo(url);
+    expect(again.connected).toBe(true);
+
+    // By port.
+    const port = /:(\d{2,5})\//.exec(url)?.[1];
+    expect(port).toBeDefined();
+    const byPort = await manager.connectTo(port as string);
+    expect(byPort.connected).toBe(true);
+
+    // Unknown id → INVALID_ARGUMENT whose fix lists the real candidates.
+    await expect(manager.connectTo('f-99999')).rejects.toMatchObject({
+      code: 'INVALID_ARGUMENT',
+      fix: expect.stringContaining(url),
+    });
+
+    await manager.disconnect();
+  });
+
   it('escalates a session conflict to DISCOVERY_FAILED when recovery is impossible', async () => {
     server = new MockBiDiServer();
     const url = await server.start();

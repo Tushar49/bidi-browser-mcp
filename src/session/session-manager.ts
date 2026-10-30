@@ -21,6 +21,7 @@ import type {
   SessionStatus,
 } from '../types.js';
 import { ActionableError, formatError } from '../utils/errors.js';
+import { connect as tcpConnect } from 'node:net';
 
 interface PersistedSession {
   sessionId: string;
@@ -29,6 +30,43 @@ interface PersistedSession {
 
 /** Disk record so a later process can end a session this one left behind. */
 const LAST_SESSION_FILE = 'last-bidi-session.json';
+
+/** Port from a ws endpoint path (`ws://127.0.0.1:9444/…` → '9444'). */
+function portOf(endpoint: string): string | undefined {
+  return /:(\d{2,5})\//.exec(endpoint)?.[1];
+}
+
+/**
+ * Stable short handle for a discovery candidate: family initial + port
+ * (`f-9223`, `c-9222`); collisions get an index suffix. The agent passes
+ * this (or a port, or the full endpoint) to browser.connect's target.
+ */
+function candidateId(candidate: DiscoveryCandidate, index: number): string {
+  const initial = candidate.browserFamily === 'chromium' ? 'c' : 'f';
+  const port = portOf(candidate.endpoint) ?? String(index);
+  return `${initial}-${port}`;
+}
+
+/**
+ * TCP reachability probe for the candidate listing — a connect attempt with
+ * a short cap, nothing else. Loopback connects answer in milliseconds; the
+ * cap only bounds dead ports and firewalled hosts.
+ */
+async function portReachable(port: string | undefined, timeoutMs = 600): Promise<boolean> {
+  if (port === undefined) {
+    return false;
+  }
+  return new Promise((resolve) => {
+    const socket = tcpConnect({ host: '127.0.0.1', port: Number(port) });
+    const done = (result: boolean): void => {
+      socket.destroy();
+      resolve(result);
+    };
+    socket.once('connect', () => done(true));
+    socket.once('error', () => done(false));
+    socket.setTimeout(timeoutMs, () => done(false));
+  });
+}
 
 /**
  * The mapper reports CDP-shaped capabilities: `browserName` is a product
@@ -188,10 +226,80 @@ export class SessionManager implements SessionManagerLike {
     const candidates = await discoverBrowsers(this.#config);
     const connectedEndpoint = this.#client?.url;
 
-    return candidates.map((candidate) => ({
+    const withIds = candidates.map((candidate, index) => ({
       ...candidate,
-      ...(connectedEndpoint === candidate.endpoint ? { live: true } : {}),
+      id: candidateId(candidate, index),
     }));
+
+    // Reachability is a listing aid (TCP probe of the endpoint port), not a
+    // session handshake: Firefox serves one session, so busy-ness is only
+    // known at connect time.
+    return Promise.all(
+      withIds.map(async (candidate) => ({
+        ...candidate,
+        reachable: await portReachable(portOf(candidate.endpoint)),
+        ...(connectedEndpoint === candidate.endpoint ? { live: true } : {}),
+      }))
+    );
+  }
+
+  /**
+   * Connect to a specific discovered browser: candidate id ('f-9444'), a
+   * port ('9444'), or an exact endpoint. Undefined keeps the default ordered
+   * auto-connect. Switching ends the current session first — tabs stay open
+   * (the browser itself is never closed or restarted).
+   */
+  async connectTo(target?: string): Promise<SessionStatus> {
+    if (target === undefined || target.trim() === '') {
+      return this.connect();
+    }
+
+    const candidates = await discoverBrowsers(this.#config);
+    if (candidates.length === 0) {
+      throw new ActionableError(
+        'DISCOVERY_FAILED',
+        'No reachable browser endpoint was found.',
+        { fix: 'Start Firefox or Zen with --remote-debugging-port, or set BIDI_WS_URL.' }
+      );
+    }
+
+    const needle = target.trim();
+    const chosen = this.#resolveTarget(candidates, needle);
+    if (chosen === undefined) {
+      throw new ActionableError(
+        'INVALID_ARGUMENT',
+        `No discovery candidate matches "${needle}".`,
+        {
+          fix: `Pick one of: ${candidates
+            .map((entry, index) => `${candidateId(entry, index)} (${entry.endpoint})`)
+            .join(', ')}.`,
+        }
+      );
+    }
+
+    if (this.#client?.url === chosen.endpoint) {
+      return this.status();
+    }
+    if (this.#client !== undefined) {
+      // Explicit switch: end the owned session (tabs stay open), then attach
+      // to the requested candidate through the same busy/recovery flow.
+      await this.disconnect();
+    }
+    return this.#connectOnce([chosen]);
+  }
+
+  /** Resolve a connect target string against the discovery list. */
+  #resolveTarget(
+    candidates: readonly DiscoveryCandidate[],
+    needle: string
+  ): DiscoveryCandidate | undefined {
+    const endpoint = needle.startsWith('ws://') ? needle : undefined;
+    const port = /^\d{2,5}$/.test(needle) ? needle : undefined;
+    return (
+      candidates.find((entry) => entry.endpoint === endpoint) ??
+      candidates.find((entry) => port !== undefined && portOf(entry.endpoint) === port) ??
+      candidates.find((entry, index) => candidateId(entry, index) === needle)
+    );
   }
 
   async version(): Promise<{ serverVersion: string; browserVersion?: string }> {
@@ -226,8 +334,8 @@ export class SessionManager implements SessionManagerLike {
     await verifyElementRef((method, params) => this.request(method, params), element, context, uid);
   }
 
-  async #connectOnce(): Promise<SessionStatus> {
-    const candidates = await discoverBrowsers(this.#config);
+  async #connectOnce(only?: readonly DiscoveryCandidate[]): Promise<SessionStatus> {
+    const candidates = only ?? (await discoverBrowsers(this.#config));
     if (candidates.length === 0) {
       throw new ActionableError(
         'DISCOVERY_FAILED',
